@@ -1,8 +1,7 @@
 import streamlit as st
 
-from app.database import repository
-from app.database.connection import connect
-from app.ui.components import get_settings
+from app.services import query_service
+from app.services.errors import DataUnavailableError
 
 EXAMPLE_PROMPTS = [
     "US technology companies with revenue growth above 15%.",
@@ -10,7 +9,6 @@ EXAMPLE_PROMPTS = [
     "Technology stocks down more than 30% from their 52-week high.",
 ]
 QUERY_KEY = "home_query"
-db_path = get_settings().resolved_database_path
 
 
 def use_example(text: str) -> None:
@@ -25,7 +23,7 @@ with st.form("home_search"):
         "What are you looking for?",
         key=QUERY_KEY,
         height=140,
-        max_chars=repository.QUERY_TEXT_MAX_LENGTH,
+        max_chars=query_service.QUERY_TEXT_MAX_LENGTH,
         placeholder="US technology companies with revenue growth above 15%...",
     )
     submitted = st.form_submit_button("Search", type="primary")
@@ -40,8 +38,9 @@ if submitted:
         st.warning("Type a request first.")
     else:
         try:
-            with connect(db_path) as con:
-                query_id = repository.record_query(con, text)
+            query_id = query_service.submit_query(text)
+        except DataUnavailableError as exc:
+            st.warning(f"Your request could not be saved: {exc}")
         except Exception as exc:  # noqa: BLE001 - show the problem, keep the page usable
             st.error(f"Could not save the request: {type(exc).__name__}: {exc}")
         else:
@@ -52,8 +51,9 @@ if submitted:
 
 st.subheader("Recent requests")
 try:
-    with connect(db_path) as con:
-        recent = repository.recent_queries(con, limit=10)
+    recent = query_service.recent_queries(limit=10)
+except DataUnavailableError as exc:
+    st.warning(f"Query history is unavailable: {exc}")
 except Exception as exc:  # noqa: BLE001
     st.warning(f"Query history is unavailable: {type(exc).__name__}: {exc}")
 else:

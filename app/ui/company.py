@@ -1,37 +1,40 @@
 import streamlit as st
 
-from app.database import repository
-from app.database.connection import connect
+from app.services import company_service
+from app.services.errors import DataUnavailableError
 from app.ui.charts import price_chart
-from app.ui.components import NA, get_settings, not_implemented
-
-db_path = get_settings().resolved_database_path
+from app.ui.components import NA, not_implemented
 
 st.title("Company")
 
 with st.form("company_lookup"):
-    ticker = st.text_input("Ticker", placeholder="e.g. AAPL", max_chars=12)
+    query = st.text_input("Ticker or CIK", placeholder="e.g. AAPL or 320193", max_chars=20)
     st.form_submit_button("Look up", type="primary")
 
-ticker = ticker.strip()
-if not ticker:
-    st.caption("Enter a ticker to open a company.")
+query = query.strip()
+if not query:
+    st.caption("Enter a ticker or a CIK to open a company.")
     st.stop()
 
 try:
-    with connect(db_path) as con:
-        matches = repository.find_securities(con, ticker)
-        selected = None
-        if matches.is_empty():
-            st.warning(f"{ticker.upper()} is not in the local database ({NA}). No data has been synchronized for it.")
-        else:
-            labels = [
-                f"{row['ticker']} - {row['name'] or NA} (CIK {row['cik'] or NA})"
-                for row in matches.iter_rows(named=True)
-            ]
-            choice = st.selectbox("Security", labels) if len(labels) > 1 else labels[0]
-            selected = matches.row(labels.index(choice), named=True)
-        prices = repository.price_history(con, selected["security_id"]) if selected else None
+    matches = company_service.find_companies(query)
+    selected = None
+    prices = None
+    if matches.is_empty():
+        st.warning(f"{query.upper()} is not in the local database ({NA}). No data has been synchronized for it.")
+    else:
+        labels = [
+            f"{row['ticker']} - {row['name'] or NA} (CIK {row['cik'] or NA})" for row in matches.iter_rows(named=True)
+        ]
+        choice = st.selectbox("Security", labels) if len(labels) > 1 else labels[0]
+        selected = matches.row(labels.index(choice), named=True)
+        prices = company_service.price_history(selected["security_id"])
+except ValueError as exc:  # malformed ticker / CIK
+    st.warning(str(exc))
+    st.stop()
+except DataUnavailableError as exc:
+    st.warning(f"Company data is unavailable: {exc}")
+    st.stop()
 except Exception as exc:  # noqa: BLE001
     st.error(f"Database error: {type(exc).__name__}: {exc}")
     st.stop()
@@ -62,7 +65,8 @@ with price:
         st.plotly_chart(price_chart(prices, f"{selected['ticker']} close"), width="stretch")
 with filings:
     not_implemented(
-        "Filings", ["10-K, 10-Q, 8-K list with links", "Section extraction (risk factors, MD&A, legal proceedings)"]
+        "Filings",
+        ["10-K, 10-Q, 8-K list with links", "Section extraction (risk factors, MD&A, legal proceedings)"],
     )
 with ownership:
     not_implemented("Ownership", ["Insider transactions", "Institutional holders (13F)", "Beneficial owners"])

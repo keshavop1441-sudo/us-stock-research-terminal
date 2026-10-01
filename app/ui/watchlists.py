@@ -1,10 +1,7 @@
 import streamlit as st
 
-from app.database import repository
-from app.database.connection import connect
-from app.ui.components import get_settings
-
-db_path = get_settings().resolved_database_path
+from app.services import watchlist_service
+from app.services.errors import DataUnavailableError
 
 st.title("Watchlists")
 
@@ -13,15 +10,20 @@ with st.form("new_watchlist", clear_on_submit=True):
     description = st.text_input("Description (optional)", max_chars=200)
     create = st.form_submit_button("Create watchlist", type="primary")
 
+if create:
+    try:
+        watchlist_service.create_watchlist(name, description)
+        st.success(f"Created watchlist '{name.strip()}'.")
+    except ValueError as exc:
+        st.warning(str(exc))
+    except DataUnavailableError as exc:
+        st.warning(f"The watchlist could not be saved: {exc}")
+
 try:
-    with connect(db_path) as con:
-        if create:
-            try:
-                repository.create_watchlist(con, name, description)
-                st.success(f"Created watchlist '{name.strip()}'.")
-            except ValueError as exc:
-                st.warning(str(exc))
-        watchlists = repository.list_watchlists(con)
+    watchlists = watchlist_service.list_watchlists()
+except DataUnavailableError as exc:
+    st.warning(f"Watchlists are unavailable: {exc}")
+    st.stop()
 except Exception as exc:  # noqa: BLE001
     st.error(f"Database error: {type(exc).__name__}: {exc}")
     st.stop()

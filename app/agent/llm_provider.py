@@ -13,6 +13,9 @@ from app.config import Settings
 from app.models.status import ProviderStatus
 
 OLLAMA_STATUS_TIMEOUT_SECONDS = 2.0
+# Named tuples: see the note in app/database/locking.py about unparenthesised `except` clauses.
+_UNREACHABLE = (httpx.HTTPError, httpx.InvalidURL)
+_BAD_RESPONSE = (ValueError, AttributeError)
 
 
 class LLMProvider(ABC):
@@ -70,9 +73,9 @@ class OllamaProvider(LLMProvider):
             return status(False, f"Timed out after {self._timeout:g}s contacting {self.base_url}.")
         except httpx.HTTPStatusError as exc:
             return status(False, f"Server answered HTTP {exc.response.status_code}.")
-        except (httpx.HTTPError, httpx.InvalidURL):
+        except _UNREACHABLE:
             return status(False, f"Cannot connect to {self.base_url}. Is Ollama running?")
-        except (ValueError, AttributeError):
+        except _BAD_RESPONSE:
             return status(False, f"{self.base_url} did not return a valid Ollama response.")
 
         has_model = any(_model_matches(self.model, name) for name in installed)

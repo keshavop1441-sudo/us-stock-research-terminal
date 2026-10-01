@@ -8,11 +8,11 @@ _ROOT = str(Path(__file__).resolve().parent.parent)
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-import streamlit as st  # noqa: E402
-from pydantic import ValidationError  # noqa: E402
+import streamlit as st
 
-from app.config import Settings  # noqa: E402
-from app.database.connection import init_database  # noqa: E402
+from app.services.errors import ConfigurationError
+from app.services.settings_service import get_settings
+from app.services.startup_service import prepare_database
 
 st.set_page_config(
     page_title="US Stock Research Terminal",
@@ -21,16 +21,15 @@ st.set_page_config(
 )
 
 try:
-    settings = Settings.from_env()
-except ValidationError as exc:
+    get_settings()
+except ConfigurationError as exc:
     st.error("Invalid configuration in the environment or .env file:")
     st.code(str(exc))
     st.stop()
 
-try:
-    init_database(settings.resolved_database_path)
-except Exception as exc:  # noqa: BLE001 - the app must still start; Data Status reports details
-    st.warning(f"Database could not be initialised: {type(exc).__name__}: {exc}")
+startup = prepare_database()
+if not startup.ready:
+    st.warning(startup.message)
 
 navigation = st.navigation(
     [

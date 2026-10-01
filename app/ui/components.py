@@ -4,13 +4,7 @@ from datetime import datetime
 
 import streamlit as st
 
-from app.config import Settings
-
 NA = "N/A"
-
-
-def get_settings() -> Settings:
-    return Settings.from_env()
 
 
 def fmt_count(value: int | None) -> str:
@@ -18,7 +12,8 @@ def fmt_count(value: int | None) -> str:
 
 
 def fmt_datetime(value: datetime | None, *, missing: str = NA) -> str:
-    return missing if value is None else value.strftime("%Y-%m-%d %H:%M:%S")
+    """Timestamps are stored as naive UTC."""
+    return missing if value is None else value.strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
 def status_text(ok: bool | None, label: str) -> str:

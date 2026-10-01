@@ -1,7 +1,16 @@
+import subprocess
+import sys
+from contextlib import contextmanager
+from pathlib import Path
+
+import duckdb
 import pytest
 
 from app.config import _ENV_VARS
-from app.database.connection import connect, init_database
+from app.database.connection import ensure_database
+
+TESTS_DIR = Path(__file__).resolve().parent
+ROOT = TESTS_DIR.parent
 
 
 @pytest.fixture
@@ -24,12 +33,46 @@ def app_env(clean_env, tmp_path):
 
 @pytest.fixture
 def db_path(tmp_path):
+    """A freshly initialised (empty, current-schema) database file."""
     path = tmp_path / "research.duckdb"
-    init_database(path)
+    ensure_database(path)
     return path
 
 
 @pytest.fixture
 def con(db_path):
-    with connect(db_path) as connection:
-        yield connection
+    """Raw DuckDB connection for test setup and assertions about stored data (tests only)."""
+    connection = duckdb.connect(str(db_path))
+    yield connection
+    connection.close()
+
+
+@pytest.fixture
+def hold(db_path):
+    """Run ``tests/hold_database.py`` in ANOTHER process and keep it holding a resource until teardown."""
+    procs: list[subprocess.Popen] = []
+
+    @contextmanager
+    def holder(mode: str, path: Path | None = None):
+        proc = subprocess.Popen(
+            [sys.executable, str(TESTS_DIR / "hold_database.py"), str(path or db_path), mode],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        procs.append(proc)
+        line = proc.stdout.readline().strip()
+        assert line == "READY", f"holder failed: {line!r} {proc.stderr.read() if proc.poll() is not None else ''}"
+        try:
+            yield proc
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+            proc.wait()
+
+    yield holder
+    for proc in procs:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()

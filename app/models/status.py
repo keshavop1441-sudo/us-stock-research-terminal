@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -49,8 +50,23 @@ class DatabaseStatus(BaseModel):
     error: str | None = None
 
 
+class RefreshStatus(BaseModel):
+    """Is another process currently writing to the database (e.g. a data refresh)?"""
+
+    active: bool = False
+    operation: str | None = None
+    pid: int | None = None
+    started_at: datetime | None = None
+
+
 class DataStatus(BaseModel):
+    """Database health. ``data_state`` says whether the figures are live, cached, or unavailable."""
+
     database: DatabaseStatus
+    data_state: Literal["live", "stale", "unavailable"]
+    as_of: datetime | None = None  # when the counts/last_sync were actually read
+    notice: str | None = None  # human-readable reason when data_state is not "live"
+    refresh: RefreshStatus = Field(default_factory=RefreshStatus)
     counts: dict[str, int | None] = Field(default_factory=dict)  # None = unavailable
     last_sync: datetime | None = None  # None = never synchronized
     openbb: OpenBBStatus

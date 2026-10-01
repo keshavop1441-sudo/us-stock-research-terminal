@@ -1,32 +1,24 @@
 @echo off
-rem Starts the US Stock Research Terminal (local only, http://127.0.0.1:8501).
-setlocal
+rem Starts the US Stock Research Terminal on http://127.0.0.1:8501 (this computer only).
+rem   START_TERMINAL.bat              set up if needed, start, open the browser
+rem   START_TERMINAL.bat /setup-only  only prepare .venv and the database
+rem   START_TERMINAL.bat /smoke       start, check it is healthy, stop (used by CI)
+setlocal EnableExtensions
 cd /d "%~dp0"
+set "PYTHONUTF8=1"
 
-if not exist ".venv\Scripts\python.exe" (
-    echo Creating virtual environment with Python 3.14...
-    py -3.14 -m venv .venv
-    if errorlevel 1 (
-        echo Could not create the virtual environment. Install Python 3.14 from python.org ^(with the py launcher^).
-        pause
-        exit /b 1
-    )
-    ".venv\Scripts\python.exe" -m pip install --upgrade pip
-    ".venv\Scripts\python.exe" -m pip install -r requirements.txt
-    if errorlevel 1 (
-        echo Dependency installation failed. Delete the .venv folder and try again.
-        pause
-        exit /b 1
-    )
-)
-
-if not exist ".env" copy ".env.example" ".env" >nul
-
+call scripts\setup_env.bat
+if errorlevel 1 goto :failed
 ".venv\Scripts\python.exe" scripts\init_db.py
-if errorlevel 1 (
-    pause
-    exit /b 1
-)
+if errorlevel 1 goto :failed
 
-".venv\Scripts\python.exe" -m streamlit run app\main.py
-if errorlevel 1 pause
+if /i "%~1"=="/setup-only" exit /b 0
+if /i "%~1"=="/smoke" (".venv\Scripts\python.exe" scripts\launch_terminal.py --smoke --port 8599 --no-browser) else (".venv\Scripts\python.exe" scripts\launch_terminal.py)
+if errorlevel 1 goto :failed
+exit /b 0
+
+:failed
+echo.
+echo START_TERMINAL failed. See the messages above.
+if /i not "%~1"=="/smoke" if /i not "%~1"=="/setup-only" pause
+exit /b 1
