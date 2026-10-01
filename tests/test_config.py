@@ -77,7 +77,7 @@ def test_env_example_matches_defaults():
 
 
 def test_secrets_and_local_data_are_git_ignored():
-    ignored = (ROOT / ".gitignore").read_text().splitlines()
+    ignored = (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
     assert ".env" in ignored
     assert "*.duckdb" in ignored
     assert "!.env.example" in ignored

@@ -22,7 +22,7 @@ def normalise(name: str) -> str:
 
 def direct_requirements(path: Path) -> dict[str, str]:
     pins = {}
-    for raw in path.read_text().splitlines():
+    for raw in path.read_text(encoding="utf-8").splitlines():
         line = raw.split("#")[0].strip()
         if not line or line.startswith("-r"):
             continue
@@ -36,7 +36,7 @@ def lock_entries(path: Path) -> dict[str, dict]:
     """name -> {version, marker, hashes} for every pinned package in a uv lock file."""
     entries: dict[str, dict] = {}
     current = None
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         header = re.match(r"^([A-Za-z0-9_.\-]+)==([^\s;]+)(?:\s*;\s*(.*?))?\s*\\?$", line)
         if header:
             current = entries.setdefault(normalise(header[1]), {"version": header[2], "marker": header[3], "hashes": 0})
@@ -52,7 +52,7 @@ def test_direct_requirements_are_exactly_pinned():
 
 def test_lock_files_pin_every_package_with_hashes_for_python_314():
     for name in ("requirements.lock", "requirements-dev.lock"):
-        text = (ROOT / name).read_text()
+        text = (ROOT / name).read_text(encoding="utf-8")
         assert "--universal" in text.splitlines()[1] and "--python-version 3.14" in text.splitlines()[1]
         assert "--generate-hashes" in text.splitlines()[1]
         entries = lock_entries(ROOT / name)
@@ -84,7 +84,7 @@ def test_pyarrow_is_not_a_direct_dependency_and_nothing_imports_it():
 def third_party_imports(directory: Path) -> set[str]:
     found = set()
     for path in directory.rglob("*.py"):
-        for node in ast.walk(ast.parse(path.read_text())):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             names = [a.name for a in node.names] if isinstance(node, ast.Import) else []
             if isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
                 names = [node.module]
@@ -131,7 +131,7 @@ def test_forbidden_infrastructure_is_not_a_direct_dependency():
 
 
 def test_ci_targets_python_314_on_linux_and_windows_with_hash_checked_installs():
-    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     assert 'python-version: "3.14"' in workflow
     assert "3.13" not in workflow and "py313" not in workflow
     assert "windows-latest" in workflow and "ubuntu-latest" in workflow
@@ -141,4 +141,4 @@ def test_ci_targets_python_314_on_linux_and_windows_with_hash_checked_installs()
 
 
 def test_no_leftover_python_313_configuration():
-    assert "py313" not in (ROOT / "ruff.toml").read_text()
+    assert "py313" not in (ROOT / "ruff.toml").read_text(encoding="utf-8")

@@ -22,14 +22,14 @@ def test_batch_files_use_windows_line_endings_and_are_ascii():
 
 
 def test_gitattributes_keeps_bat_files_crlf():
-    assert "*.bat text eol=crlf" in (ROOT / ".gitattributes").read_text()
+    assert "*.bat text eol=crlf" in (ROOT / ".gitattributes").read_text(encoding="utf-8")
 
 
 def test_installs_go_through_the_hash_locked_bootstrap_not_a_bare_pip_install():
     for name in BATS:
         assert not re.search(r"pip install", text(name), re.IGNORECASE), name
     assert "scripts\\bootstrap_env.py" in text("scripts/setup_env.bat")
-    assert "--require-hashes" in (ROOT / "scripts" / "bootstrap_env.py").read_text()
+    assert "--require-hashes" in (ROOT / "scripts" / "bootstrap_env.py").read_text(encoding="utf-8")
 
 
 def test_every_step_that_can_fail_is_checked():
@@ -61,11 +61,11 @@ def test_non_interactive_modes_exist_for_ci_and_scheduled_runs():
 def test_no_first_run_prompts_and_utf8_is_forced():
     for name in ("START_TERMINAL.bat", "UPDATE_DATA.bat"):
         assert "PYTHONUTF8=1" in text(name)
-    launcher = (ROOT / "scripts" / "launch_terminal.py").read_text()
+    launcher = (ROOT / "scripts" / "launch_terminal.py").read_text(encoding="utf-8")
     assert "STREAMLIT_SERVER_HEADLESS" in launcher  # headless mode skips Streamlit's first-run e-mail prompt
     assert "STREAMLIT_BROWSER_GATHER_USAGE_STATS" in launcher
 
 
 def test_the_terminal_listens_on_localhost_only():
-    assert "--server.address" in (ROOT / "scripts" / "launch_terminal.py").read_text()
-    assert "127.0.0.1" in (ROOT / ".streamlit" / "config.toml").read_text()
+    assert "--server.address" in (ROOT / "scripts" / "launch_terminal.py").read_text(encoding="utf-8")
+    assert "127.0.0.1" in (ROOT / ".streamlit" / "config.toml").read_text(encoding="utf-8")

@@ -1,6 +1,7 @@
 """Application startup, navigation and page behaviour via Streamlit's AppTest."""
 
 import datetime as dt
+import re
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,8 @@ from app.services import status_service
 
 PAGES = ["ui/home.py", "ui/screener.py", "ui/company.py", "ui/watchlists.py", "ui/data_status.py", "ui/settings.py"]
 TIMEOUT = 30
+# A closed port refuses at once on Linux but can time out on Windows; either way Ollama is reported unavailable.
+OLLAMA_DOWN = re.compile(r"Is Ollama running\?|Timed out after")
 ROOT = Path(__file__).resolve().parent.parent
 MAIN = ROOT / "app" / "main.py"
 
@@ -124,7 +127,7 @@ def test_data_status_on_empty_database(app_env):
     }
     text = " ".join(m.value for m in at.markdown)
     assert "Ready (schema v2)" in text
-    assert "Is Ollama running?" in text
+    assert OLLAMA_DOWN.search(text) and ":red[" in text
     assert str(app_env) in [t.value for t in at.text_input]
 
 
@@ -171,7 +174,7 @@ def test_settings_page_shows_configuration(app_env):
     assert values["Ollama URL"] == "http://127.0.0.1:9"
     assert values["Ollama model"] == "qwen3.5:4b"
     assert {c.label: c.value for c in at.checkbox} == {"FAST_THINK": False, "DEEP_THINK": True}
-    assert any("Is Ollama running?" in m.value for m in at.markdown)
+    assert any(OLLAMA_DOWN.search(m.value) for m in at.markdown)
 
 
 def lookup(at, text):

@@ -57,7 +57,7 @@ def test_fresh_install_uses_hashes_and_writes_the_marker(files):
     assert run(files, runner) == 0
     (pip,) = runner.pip_calls
     assert "--require-hashes" in pip and str(files[0]) in pip and pip[pip.index("-r") + 1] == str(files[0])
-    assert files[1].read_text() == hashlib.sha256(files[0].read_bytes()).hexdigest()
+    assert files[1].read_text(encoding="utf-8") == hashlib.sha256(files[0].read_bytes()).hexdigest()
 
 
 def test_second_run_is_a_no_op(files):
@@ -132,8 +132,8 @@ def test_the_real_import_check_detects_a_missing_module(monkeypatch):
 
 def test_required_python_matches_the_declared_target():
     major, minor = bootstrap.REQUIRED_PYTHON
-    assert (ROOT / ".python-version").read_text().strip() == f"{major}.{minor}"
-    assert f'target-version = "py{major}{minor}"' in (ROOT / "ruff.toml").read_text()
+    assert (ROOT / ".python-version").read_text(encoding="utf-8").strip() == f"{major}.{minor}"
+    assert f'target-version = "py{major}{minor}"' in (ROOT / "ruff.toml").read_text(encoding="utf-8")
 
 
 def test_marker_and_lock_paths_point_at_the_project():

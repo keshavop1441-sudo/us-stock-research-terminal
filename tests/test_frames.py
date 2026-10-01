@@ -54,7 +54,7 @@ def test_works_without_pyarrow_pandas_numpy():
 
 def _app_modules():
     for path in (ROOT / "app").rglob("*.py"):
-        yield path, ast.parse(path.read_text(), filename=str(path))
+        yield path, ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
 
 
 def test_application_code_never_calls_arrow_backed_conversions():

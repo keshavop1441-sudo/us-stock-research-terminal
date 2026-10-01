@@ -98,7 +98,7 @@ def test_neither_repository_offers_raw_sql_or_a_public_connection(db_path):
 
 
 def test_read_repository_cannot_write_and_does_not_import_the_write_side():
-    tree = ast.parse(Path(read_repository.__file__).read_text())
+    tree = ast.parse(Path(read_repository.__file__).read_text(encoding="utf-8"))
     imported = {n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)} | {
         a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names
     }
@@ -115,4 +115,4 @@ def test_read_repository_cannot_write_and_does_not_import_the_write_side():
 
 
 def test_write_repository_does_not_import_the_read_side():
-    assert "read_repository" not in Path(write_repository.__file__).read_text()
+    assert "read_repository" not in Path(write_repository.__file__).read_text(encoding="utf-8")

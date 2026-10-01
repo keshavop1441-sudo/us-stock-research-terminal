@@ -7,6 +7,7 @@ boundary here; read/write separation is done at the repository level (see ``read
 ``write_repository``).
 """
 
+import re
 import time
 from pathlib import Path
 
@@ -19,6 +20,19 @@ from app.database.schema import SCHEMA_VERSION
 
 _RETRY_INTERVAL_SECONDS = 0.05
 
+# DuckDB words "the file is held by another process" differently per platform:
+#   Linux/macOS: 'Could not set lock on file "...": Conflicting lock is held in ... (PID n)'
+#   Windows:     'Cannot open file "...": The process cannot access the file because it is being used by another
+#                 process. File is already open in ... (PID n)'   (found by running the tests on real Windows CI)
+_LOCK_CONFLICT = re.compile(
+    r"could not set lock|conflicting lock|being used by another process|already open in", re.IGNORECASE
+)
+
+
+def is_lock_conflict(message: str) -> bool:
+    """True if a DuckDB IOException message means another process has the database file open."""
+    return bool(_LOCK_CONFLICT.search(message))
+
 
 def open_connection(path: Path, *, wait: float = 0.0) -> duckdb.DuckDBPyConnection:
     """Open the database file, retrying for up to ``wait`` seconds if another process holds it.
@@ -30,7 +44,7 @@ def open_connection(path: Path, *, wait: float = 0.0) -> duckdb.DuckDBPyConnecti
         try:
             return duckdb.connect(str(path))
         except duckdb.IOException as exc:
-            if "lock" not in str(exc).lower():
+            if not is_lock_conflict(str(exc)):
                 raise
             if time.monotonic() >= deadline:
                 raise DatabaseLockedError("The database file is in use by another process.") from exc

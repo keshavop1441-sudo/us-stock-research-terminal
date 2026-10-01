@@ -9,7 +9,7 @@ import duckdb
 import pytest
 
 from app.database import access
-from app.database.connection import ensure_database
+from app.database.connection import ensure_database, is_lock_conflict
 from app.database.errors import DatabaseLockedError, DatabaseUnavailableError, WriterBusyError
 from app.database.locking import WriterLock, info_path, lock_path, writer_status
 
@@ -21,7 +21,7 @@ def test_normal_acquisition_and_release(db_path):
         assert status.active is True
         assert (status.operation, status.pid) == ("unit test", os.getpid())
         assert status.started_at is not None
-        info = json.loads(info_path(db_path).read_text())
+        info = json.loads(info_path(db_path).read_text(encoding="utf-8"))
         assert info["operation"] == "unit test"
     assert writer_status(db_path).active is False
     assert not info_path(db_path).exists()
@@ -59,7 +59,7 @@ def test_lock_is_recovered_after_the_holder_process_is_killed(db_path, hold):
     assert info_path(db_path).exists()  # the crashed process could not clean up its info file ...
     assert writer_status(db_path).active is False  # ... but the OS released the lock, so nobody is "active"
     with WriterLock(db_path, "after crash", timeout=0.5):  # a new writer is not blocked by the stale leftovers
-        assert json.loads(info_path(db_path).read_text())["operation"] == "after crash"
+        assert json.loads(info_path(db_path).read_text(encoding="utf-8"))["operation"] == "after crash"
 
 
 def test_lock_is_released_when_the_work_inside_fails(db_path):
@@ -166,3 +166,31 @@ def test_ensure_database_needing_changes_waits_for_the_writer_lock(tmp_path, hol
 
 def test_paths_are_plain_pathlib(db_path):
     assert isinstance(db_path, Path)
+
+
+# Real messages DuckDB produced (Linux locally, Windows on the CI runner). Windows never says "lock".
+LINUX_LOCK_MESSAGE = (
+    'IO Error: Could not set lock on file "/tmp/x/research.duckdb": Conflicting lock is held in '
+    "/usr/bin/python3.13 (PID 8010). See also https://duckdb.org/docs/connect/concurrency"
+)
+WINDOWS_LOCK_MESSAGE = (
+    'IO Error: Cannot open file "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\research.duckdb": '
+    "The process cannot access the file because it is being used by another process.\n\n\n"
+    "File is already open in \nC:\\hostedtoolcache\\windows\\Python\\3.14.7\\x64\\python.exe (PID 3424)"
+)
+
+
+def test_lock_conflicts_are_recognised_on_every_platform():
+    assert is_lock_conflict(LINUX_LOCK_MESSAGE)
+    assert is_lock_conflict(WINDOWS_LOCK_MESSAGE)
+
+
+def test_other_io_errors_are_not_mistaken_for_a_lock_conflict():
+    for message in (
+        'IO Error: Cannot open file "/x/research.duckdb": No such file or directory',
+        'IO Error: Cannot open file "C:\\x\\research.duckdb": Access is denied.',
+        "IO Error: Could not read enough bytes from file",
+        "Permission denied",
+        "block device error",  # contains the letters "lock" but is not a lock conflict
+    ):
+        assert not is_lock_conflict(message), message

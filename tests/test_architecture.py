@@ -16,7 +16,7 @@ SQL_STATEMENT = re.compile(
 
 def imports_of(path: Path) -> set[str]:
     names: set[str] = set()
-    for node in ast.walk(ast.parse(path.read_text())):
+    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
         if isinstance(node, ast.Import):
             names.update(a.name for a in node.names)
         elif isinstance(node, ast.ImportFrom) and node.module:
@@ -28,7 +28,7 @@ def imports_of(path: Path) -> set[str]:
 def string_constants(path: Path) -> list[str]:
     return [
         n.value
-        for n in ast.walk(ast.parse(path.read_text()))
+        for n in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
         if isinstance(n, ast.Constant) and isinstance(n.value, str)
     ]
 
@@ -66,7 +66,9 @@ def test_ui_pages_contain_no_sql():
 def test_ui_does_not_read_settings_or_environment_directly():
     for path in UI_AND_MAIN:
         assert not starts_with(imports_of(path), "app.config"), path.name
-        assert "os.environ" not in path.read_text() and "getenv" not in path.read_text(), path.name
+        assert "os.environ" not in path.read_text(encoding="utf-8") and "getenv" not in path.read_text(
+            encoding="utf-8"
+        ), path.name
 
 
 def test_services_do_not_depend_on_the_ui_or_streamlit():
