@@ -1,0 +1,21 @@
+# US Stock Research Terminal - runtime dependencies.
+# Target interpreter: Python 3.14.
+#
+# OpenBB V5 = openbb-core 2.x plus 2.x provider/router extensions.
+# Only the extensions actually needed are installed - NOT the full `openbb` meta-package.
+# Note: openbb-core itself depends on fastapi/uvicorn/aiohttp. They are installed
+# transitively and are not used directly by this project.
+openbb-core>=2.0.1,<3
+openbb-sec>=2.0.0,<3
+openbb-nasdaq>=2.0.0,<3
+openbb-cboe>=2.0.0,<3
+openbb-news>=2.0.0,<3
+
+streamlit>=1.64,<2
+duckdb>=1.5,<2
+polars>=1.44,<2
+plotly>=6,<8
+pydantic>=2.12,<3
+python-dotenv>=1.0,<2
+httpx>=0.28,<1
+# pandas is installed transitively by Streamlit/OpenBB; it is not imported by this project yet.
