@@ -172,13 +172,22 @@ freshness; a minimal environment with only duckdb and polars; and a **real Windo
 
 ### Windows limitations
 
-* The `.bat` files were written and reviewed without a Windows machine. The `windows-scripts` CI job runs them
-  on a real `windows-latest` runner, which is the verification; the result of that job (not this README) is
-  the source of truth. No claim is made that they were run on a developer's own Windows PC.
-* The lock logic on Windows (`msvcrt`) comes from the `filelock` library and is exercised by the cross-process
-  tests in the Windows CI job; locally the tests ran on Linux.
-* Antivirus or backup tools that open `data/research.duckdb` can make the database appear "in use"; the app
-  reports it as locked rather than failing.
+What has actually been executed, and where:
+
+* **GitHub Actions `windows-latest`, Python 3.14** runs the full test suite and the real `.bat` files
+  (`START_TERMINAL.bat /setup-only` twice, broken-install recovery, `/smoke`, `UPDATE_DATA.bat /nopause`).
+  Its first run found three Windows-only problems that Linux could not show (DuckDB's "file in use" error has
+  different wording on Windows and was not recognised; tests assumed UTF-8 source reading and an instantly
+  refused closed port). They were fixed and the second run passed. The CI result is the source of truth.
+* **No developer-PC run:** nobody has run the scripts on a personal Windows installation (different Python
+  install layout, antivirus, corporate proxy, OneDrive-synced folders, non-ASCII user names). Treat the first
+  such run as untested.
+* Antivirus/backup tools that open `data/research.duckdb` make the database look "in use"; the app reports
+  that as locked/unavailable instead of crashing. Keep the project folder out of OneDrive-style sync.
+* On Windows a closed local port can take ~2 s to time out instead of refusing instantly, so the Data Status
+  and Settings pages can take that long to load while Ollama is not running.
+* GitHub warns that `actions/checkout@v4` and `actions/setup-python@v5` use the deprecated Node 20 runtime;
+  CI still runs (bump the action versions later).
 
 ## Project layout
 
