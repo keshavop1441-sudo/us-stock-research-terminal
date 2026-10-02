@@ -1,8 +1,12 @@
 # Phase 2: data-source and metric coverage audit
 
-Status: **audit (Phase 2), plus the Phase 3A P0 pilot section at the end** (section 13). No screener, no AI agent. The machine-readable matrix is
+Status: **audit (Phase 2), plus the Phase 3A P0 pilot section at the end** (section 13). The machine-readable matrix is
 [`data_coverage.yaml`](data_coverage.yaml) (the source of truth; the metric table at the bottom of this file is generated
 from it and checked by `tests/test_data_coverage.py`). Executable metric rules: `app/screening/metrics.py`.
+
+> **Product direction (migration to the Claude Skill).** The screening interface (`app/research`, `research.py screen`) and the evidence packet now sit on top of this audit. They add
+> no new data source and relax no rule here; the only new derived metrics are `*_margin_change_yoy` and `debt_to_equity_change_yoy` (`margin_change`, `leverage_change`). The
+> Phase 3 staged-universe rule still holds: the full universe is not loaded, so screens run on ingested securities.
 
 ## 1. How to read the evidence
 
@@ -357,6 +361,7 @@ raised inside OpenBB calls are captured as `OPENBB_WARNING`. The five warnings o
 | `eps_growth_yoy` | DERIVED | derived: derived | derived | yes: NVDA, RIVN |
 | `margins` | DERIVED | derived: derived | derived | yes: RIVN |
 | `margin_change` | DERIVED | derived: derived | derived | yes: RIVN |
+| `leverage_change` | DERIVED | derived: derived | derived | no |
 | `price_to_sales` | DERIVED | derived: derived | derived | no |
 | `price_to_earnings` | DERIVED | derived: derived | derived | yes: RIVN |
 | `comparability_year_over_year` | DERIVED | derived: derived | derived | no |

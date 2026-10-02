@@ -24,10 +24,9 @@ def clean_env(monkeypatch):
 
 @pytest.fixture
 def app_env(clean_env, tmp_path):
-    """Hermetic environment for app tests: temp database, Ollama pointed at a closed port."""
+    """Hermetic environment for service/CLI tests: temp database, no SEC contact, no network configured."""
     db_path = tmp_path / "research.duckdb"
     clean_env.setenv("DATABASE_PATH", str(db_path))
-    clean_env.setenv("OLLAMA_BASE_URL", "http://127.0.0.1:9")  # discard port: connection refused
     return db_path
 
 

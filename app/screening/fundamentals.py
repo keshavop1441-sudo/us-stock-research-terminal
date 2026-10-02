@@ -146,9 +146,10 @@ class StatementIndex:
         kinds: frozenset[PeriodKind] | None = None,
         tags: tuple[str, ...] | None = None,
         as_of: date | None = None,
+        accession: str | None = None,
     ) -> Selection:
         """Value of ``line`` for the period ending ``end`` (and starting ``start`` if given), latest vintage, tag by
-        priority."""
+        priority. ``accession`` restricts the choice to the values ONE filing reported (same-filing comparisons)."""
         chosen: tuple[str, Fact, list[Fact]] | None = None
         others: list[tuple[str, Fact]] = []
         for tag in tags or SPEC_BY_LINE[line].tags:
@@ -159,6 +160,7 @@ class StatementIndex:
                 and (start is None or f.period_start == start)
                 and (kinds is None or f.kind in kinds)
                 and (as_of is None or f.filed <= as_of)
+                and (accession is None or f.accession == accession)
             ]
             if not points:
                 continue

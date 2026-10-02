@@ -377,7 +377,7 @@ def _a11(first: RunReport, second: RunReport | None) -> Criterion:
     t = second.totals() if second else None
     tests = (
         "verified by hermetic tests (tests/test_p0_pipeline.py, tests/test_upsert_accounting.py, "
-        "tests/test_services.py)"
+        "tests/test_service_db.py, tests/test_research_cli.py)"
     )
     return Criterion(
         "A11", "M11 upsert",

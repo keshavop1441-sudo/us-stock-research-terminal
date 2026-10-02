@@ -1,4 +1,4 @@
-# US Stock Research Terminal - DIRECT runtime dependencies, exactly pinned.
+# US Stock Research engine (Claude Skill backend) - DIRECT runtime dependencies, exactly pinned.
 # Target interpreter: Python 3.14 (see .python-version).
 #
 # Reproducible installs use requirements.lock, which pins every transitive dependency with hashes for all
@@ -16,13 +16,9 @@ openbb-nasdaq==2.0.0
 openbb-cboe==2.0.0
 openbb-news==2.0.0
 
-streamlit==1.64.0
 duckdb==1.5.6
 polars==1.44.2
-plotly==7.1.0
 pydantic==2.13.5
 python-dotenv==1.2.4
 httpx==0.28.1
 filelock==4.0.8   # cross-process single-writer lock (fcntl on POSIX, msvcrt on Windows)
-# pandas/pyarrow are installed transitively by Streamlit; this project imports neither
-# (DuckDB results are converted to Polars without them - see app/database/frames.py).

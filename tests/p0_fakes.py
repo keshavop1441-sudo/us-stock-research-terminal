@@ -30,6 +30,7 @@ class FakeSec:
         ] = {}  # url fragment -> responses to give first (status code or 'garbage')
         self.docs_overrides: dict[str, dict] = {}  # url fragment -> replacement document
         self.map_override: dict | None = None
+        self.forms: dict[str, tuple] = {}  # symbol -> submissions ``forms`` tuples (form, filed, report[, items])
 
     def transport(self) -> httpx.MockTransport:
         return httpx.MockTransport(self.handle)
@@ -81,7 +82,7 @@ class FakeSec:
         by_cik = {syn.CIKS[s]: s for s in self.symbols}
         for cik, symbol in by_cik.items():
             if url.endswith(f"submissions/CIK{cik:010d}.json"):
-                doc = syn.submissions(cik, symbol)
+                doc = syn.submissions(cik, symbol, **({"forms": self.forms[symbol]} if symbol in self.forms else {}))
                 doc["tickers"] = [s for s in self.symbols if syn.CIKS[s] == cik]  # every listing of the issuer
                 return httpx.Response(200, content=syn.dumps(doc))
             if url.endswith(f"companyfacts/CIK{cik:010d}.json"):

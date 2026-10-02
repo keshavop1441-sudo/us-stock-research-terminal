@@ -3,7 +3,7 @@
 Ownership model
 ---------------
 * Exactly one writer at a time, across processes. The writer is either the data-refresh process
-  (long-lived) or the Streamlit app persisting a user action such as a saved request (milliseconds).
+  (long-lived: an ingestion run) or a short administrative write (milliseconds).
 * The lock is an OS-level advisory file lock (``<db>.writer.lock``, via ``filelock``: ``fcntl.flock``
   on POSIX, ``msvcrt.locking`` on Windows). The operating system releases it when the holding process
   exits for ANY reason, including a crash or kill, so there is no stale-lock cleanup to get wrong.
@@ -30,7 +30,7 @@ from app.database.errors import WriterBusyError
 # rewrite parenthesised tuples into it, which breaks the 3.13 interpreters some contributors still use.
 _INFO_ERRORS = (OSError, ValueError)
 DEFAULT_LOCK_TIMEOUT_SECONDS = 1.0
-PROBE_TIMEOUT_SECONDS = 0.15  # long enough to ride out another probe or a millisecond-long UI write
+PROBE_TIMEOUT_SECONDS = 0.15  # long enough to ride out another probe or a millisecond-long write
 
 
 def lock_path(db_path: Path) -> Path:

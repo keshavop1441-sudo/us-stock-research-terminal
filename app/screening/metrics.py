@@ -212,6 +212,16 @@ def net_debt(debt: MetricResult, cash_and_equivalents: object, short_term_invest
     return _ok(debt.value - (cash + (sti or 0.0)), flags)
 
 
+def leverage_change(ratio_now: MetricResult, ratio_prior: MetricResult) -> MetricResult:
+    """Change in a leverage ratio (debt/equity) between two balance-sheet dates, as a level difference in ratio points.
+    Positive = leverage ROSE (worsened). Defined only when both ratios are OK; a ratio that is not meaningful (negative
+    equity) or missing blocks the comparison instead of being read as zero."""
+    blocked = _depends_on(ratio_now, ratio_prior)
+    if blocked:
+        return blocked
+    return _ok(ratio_now.value - ratio_prior.value)
+
+
 def debt_to_equity(debt: MetricResult, stockholders_equity: object) -> MetricResult:
     """Total debt / stockholders' equity (parent shareholders, excluding non-controlling interests).
 

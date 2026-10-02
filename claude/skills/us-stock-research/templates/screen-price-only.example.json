@@ -1,0 +1,7 @@
+{
+  "name": "price momentum only",
+  "criteria": [
+    {"metric": "price_return_1y", "op": "gt", "value": 20, "unit": "percent"},
+    {"metric": "drawdown_from_52w_high", "op": "gte", "value": -10, "unit": "percent"}
+  ]
+}

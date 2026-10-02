@@ -27,8 +27,8 @@ jobs:
         run: python -m pip install --require-hashes -r requirements-dev.lock
       - name: Lint
         run: |
-          ruff check app tests scripts
-          ruff format --check app tests scripts
+          ruff check app tests scripts claude
+          ruff format --check app tests scripts claude
       - name: Tests
         run: python -m pytest -q
 
@@ -60,28 +60,43 @@ jobs:
       - name: Run the standalone conversion check
         run: /tmp/minimal/bin/python tests/minimal_frames_check.py
 
-  windows-scripts:
-    name: Windows batch scripts (real Windows, Python 3.14)
-    runs-on: windows-latest
+  skill-package:
+    name: Skill package builds, is reproducible and runs (${{ matrix.os }}, Python 3.14)
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.14"
-      - name: START_TERMINAL.bat /setup-only (creates .venv, installs lock, creates database)
-        shell: cmd
-        run: START_TERMINAL.bat /setup-only
-      - name: Second run is idempotent (reuses .venv, no reinstall)
-        shell: cmd
-        run: START_TERMINAL.bat /setup-only
-      - name: Broken install recovery (marker removed, next run reinstalls and verifies)
-        shell: cmd
+      - name: Build the Skill ZIP (standard library only) and verify it is reproducible
         run: |
-          del .venv\.deps_installed
-          START_TERMINAL.bat /setup-only
-      - name: START_TERMINAL.bat /smoke (Streamlit starts and answers its health check)
-        shell: cmd
-        run: START_TERMINAL.bat /smoke
-      - name: UPDATE_DATA.bat /nopause (OpenBB check + single-writer lock)
-        shell: cmd
-        run: UPDATE_DATA.bat /nopause
+          python scripts/package_skill.py
+          python scripts/package_skill.py --verify
+      - name: Install RUNTIME dependencies only (what the packaged Skill needs)
+        run: python -m pip install --require-hashes -r requirements.lock
+      - name: Run the packaged Skill from an unpacked copy (no repository around it)
+        shell: python
+        run: |
+          import subprocess, sys, tempfile, zipfile, pathlib
+          target = pathlib.Path(tempfile.mkdtemp())
+          zipfile.ZipFile("dist/us-stock-research.zip").extractall(target)
+          launcher = target / "us-stock-research" / "scripts" / "research.py"
+          work = target / "work"
+          work.mkdir()
+          for args in (["catalog"], ["doctor"]):
+              done = subprocess.run([sys.executable, str(launcher), *args], cwd=work, capture_output=True, text=True)
+              print(done.stdout[:400])
+              assert done.returncode == 0, done.stderr
+      - name: Run research.py doctor from the source checkout
+        run: python claude/skills/us-stock-research/scripts/research.py doctor
+      - uses: actions/upload-artifact@v4
+        if: matrix.os == 'ubuntu-latest'
+        with:
+          name: us-stock-research-skill
+          path: |
+            dist/us-stock-research.zip
+            dist/us-stock-research.zip.sha256

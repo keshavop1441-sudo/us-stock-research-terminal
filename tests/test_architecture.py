@@ -1,4 +1,4 @@
-"""Layering rules: ui -> services -> repositories -> database. Enforced by reading the source."""
+"""Layering rules: cli -> services -> repositories -> database; research/ is pure. Enforced by reading the source."""
 
 import ast
 import re
@@ -6,6 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 APP = ROOT / "app"
+SKILL = ROOT / "claude" / "skills" / "us-stock-research"
 # A string that STARTS like a SQL statement (prose that merely contains the word "drop" does not match).
 SQL_STATEMENT = re.compile(
     r"^\s*(SELECT\s+(\*|[\w.]+\s*(,|\(|\bFROM\b))|INSERT\s+INTO\b|UPDATE\s+\w+\s+SET\b|DELETE\s+FROM\b"
@@ -37,43 +38,32 @@ def starts_with(imports: set[str], *prefixes: str) -> set[str]:
     return {i for i in imports if any(i == p or i.startswith(p + ".") for p in prefixes)}
 
 
-UI_AND_MAIN = [*(APP / "ui").glob("*.py"), APP / "main.py"]
-
-
-def test_ui_pages_only_talk_to_services():
-    forbidden = (
-        "duckdb",
-        "app.database",
-        "app.data",
-        "app.agent",
-        "app.tools",
-        "openbb",
-        "openbb_core",
-        "filelock",
-        "httpx",
-        "dotenv",
-    )
-    for path in UI_AND_MAIN:
+def test_the_research_package_is_pure():
+    """app/research holds the screen/evidence contracts: no I/O, no database, no providers, no environment."""
+    forbidden = ("duckdb", "app.database", "app.data", "app.services", "app.cli", "openbb", "httpx",
+                 "filelock", "dotenv", "app.config")  # fmt: skip
+    for path in (APP / "research").glob("*.py"):
         assert not starts_with(imports_of(path), *forbidden), (path.name, starts_with(imports_of(path), *forbidden))
+        ingestion = starts_with(imports_of(path), "app.ingestion") - {
+            "app.ingestion.manifest",
+            "app.ingestion.manifest.MANIFEST",
+            "app.ingestion.manifest.P0Security",
+        }
+        assert not ingestion, (path.name, ingestion)  # only the pinned manifest (pure data) may be imported
+        text = path.read_text(encoding="utf-8")
+        assert "os.environ" not in text and "getenv" not in text, path.name
 
 
-def test_ui_pages_contain_no_sql():
-    for path in UI_AND_MAIN:
-        offenders = [t[:60] for t in string_constants(path) if SQL_STATEMENT.match(t)]
-        assert not offenders, (path.name, offenders)
+def test_the_cli_only_talks_to_services_and_never_opens_the_database():
+    for path in (APP / "cli").glob("*.py"):
+        imported = imports_of(path)
+        assert not starts_with(imported, "duckdb", "app.database.access", "app.database.write_repository"), path.name
+        assert not starts_with(imported, "app.database.read_repository", "app.database.connection"), path.name
 
 
-def test_ui_does_not_read_settings_or_environment_directly():
-    for path in UI_AND_MAIN:
-        assert not starts_with(imports_of(path), "app.config"), path.name
-        assert "os.environ" not in path.read_text(encoding="utf-8") and "getenv" not in path.read_text(
-            encoding="utf-8"
-        ), path.name
-
-
-def test_services_do_not_depend_on_the_ui_or_streamlit():
+def test_services_do_not_depend_on_the_cli():
     for path in (APP / "services").glob("*.py"):
-        assert not starts_with(imports_of(path), "app.ui", "streamlit"), path.name
+        assert not starts_with(imports_of(path), "app.cli"), path.name
 
 
 def test_only_the_service_layer_and_scripts_open_repositories():
@@ -84,14 +74,22 @@ def test_only_the_service_layer_and_scripts_open_repositories():
         assert not starts_with(imports_of(path), "app.database.access", "app.database.write_repository"), path
 
 
-def test_the_agent_and_tool_layers_cannot_reach_the_write_side_or_a_connection():
-    for package in ("agent", "tools"):
-        for path in (APP / package).glob("*.py"):
-            imported = imports_of(path)
-            assert not starts_with(
-                imported, "duckdb", "app.database.write_repository", "app.database.access", "app.database.connection"
-            ), (path.name, imported)
-            assert not starts_with(imported, "app.services.db"), path.name  # write_access lives there
+def test_the_read_side_used_by_research_commands_cannot_write():
+    """Research-side services read through ReadRepository; only the ingestion service and the P0 sequence write."""
+    writers = {"ingestion_service.py", "db.py"}
+    for path in (APP / "services").glob("research_*.py"):
+        if path.name == "research_ingest_service.py":
+            continue
+        assert path.name not in writers
+        imported = imports_of(path)
+        assert not starts_with(imported, "app.database.write_repository", "app.services.db"), path.name
+        assert "writer(" not in path.read_text(encoding="utf-8"), path.name
+
+
+def test_the_skill_scripts_import_nothing_but_the_cli_entry_point():
+    for path in SKILL.rglob("*.py"):
+        imported = {i for i in imports_of(path) if i.split(".")[0] in {"app", "duckdb", "openbb", "httpx"}}
+        assert imported <= {"app.cli.research", "app.cli.research.main"}, (path.name, imported)
 
 
 def test_sql_lives_only_in_the_database_layer():
@@ -100,6 +98,13 @@ def test_sql_lives_only_in_the_database_layer():
             continue
         offenders = [t[:60] for t in string_constants(path) if SQL_STATEMENT.match(t)]
         assert not offenders, (path, offenders)
+
+
+def test_no_generic_sql_shell_or_code_execution_surface_in_the_cli():
+    """The command set is fixed: nothing in the CLI executes caller-supplied SQL, shell commands or Python."""
+    text = (APP / "cli" / "research.py").read_text(encoding="utf-8")
+    for needle in ("subprocess", "os.system", "eval(", "exec(", "execute(", "shell=True", "__import__"):
+        assert needle not in text, needle
 
 
 def test_the_sql_detector_itself_recognises_statements_but_not_prose():

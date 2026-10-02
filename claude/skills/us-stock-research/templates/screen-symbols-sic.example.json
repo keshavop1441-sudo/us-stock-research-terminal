@@ -1,0 +1,6 @@
+{
+  "name": "named symbols in SEC SIC 3674 (semiconductors) with positive net margin",
+  "universe": {"symbols": ["NVDA", "AMD", "AVGO"]},
+  "classification": {"taxonomy": "sec_sic", "sic_codes": ["3674"]},
+  "criteria": [{"metric": "net_margin", "op": "gt", "value": 0, "unit": "percent"}]
+}

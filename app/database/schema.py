@@ -1,4 +1,4 @@
-"""DuckDB schema for the research terminal (schema version 3).
+"""DuckDB schema for the research engine (schema version 3).
 
 Design rules
 ------------
@@ -31,7 +31,8 @@ market_quotes    (security_id, quote_date) - one provider quote per listing per 
                  security-specific cap; issuer-level use goes through ``issuer_market_cap``.
 sources          append-only: one row per retrieval (provenance), deliberately not de-duplicated. v3 adds the
                  structured ``command``/``parameters``/``provider_version``/``as_of`` and ``is_fallback``.
-query_history, research_runs, watchlists, watchlist_items: created by the application, not ingested.
+query_history, research_runs, watchlists, watchlist_items: LEGACY tables of the retired terminal (not ingested, unused
+by the Claude Skill); kept so existing databases stay valid.
 
 ``*_key`` columns are the primary keys of their tables and a CHECK constraint ties each one to its
 component columns, so a key can never disagree with the data. The keys are computed in one place:
@@ -260,7 +261,7 @@ DDL = [
     DDL_V2_TABLES["earnings"],
     DDL_V2_TABLES["ownership"],
     DDL_V2_TABLES["events"],
-    # Every natural-language request typed into the terminal.
+    # LEGACY (the retired terminal UI): unused by the Claude Skill, kept so existing databases stay valid.
     """CREATE TABLE IF NOT EXISTS query_history (
         query_id       BIGINT PRIMARY KEY DEFAULT nextval('seq_query_id'),
         created_at     TIMESTAMP NOT NULL DEFAULT current_timestamp,

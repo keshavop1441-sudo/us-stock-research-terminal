@@ -157,6 +157,7 @@ def submissions(
     cik: int, symbol: str, *, forms=(("10-K", "2025-10-31", "2025-09-27"), ("10-Q", "2026-01-30", "2025-12-27"))
 ):
     accession = [f"{cik:010d}-{25 + i}-0000{i}1" for i in range(len(forms))]
+    # an optional 4th element is the 8-K item list ("2.02,9.01"); without it the ``items`` column is empty strings
     return {
         "cik": str(cik),
         "name": f"SYNTHETIC {symbol} INC",
@@ -172,6 +173,7 @@ def submissions(
                 "form": [f[0] for f in forms],
                 "filingDate": [f[1] for f in forms],
                 "reportDate": [f[2] for f in forms],
+                "items": [f[3] if len(f) > 3 else "" for f in forms],
                 "primaryDocument": ["doc.htm"] * len(forms),
             }
         },

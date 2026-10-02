@@ -144,12 +144,12 @@ POLICIES: tuple[ComponentPolicy, ...] = (
         False,
         None,
         (
-            "tests/test_services.py::test_during_a_refresh_status_is_cached_and_clearly_marked_stale",
-            "tests/test_services.py::test_reading_during_a_refresh_fails_clearly",
+            "tests/test_service_db.py::test_reading_during_a_refresh_fails_clearly",
+            "tests/test_research_cli.py::test_reads_during_a_refresh_are_unavailable_never_stale_data",
         ),
         True,
-        "Read-during-write needs a concurrent writer; the service tests prove reads are marked cached/unavailable "
-        "while a refresh holds the database.",
+        "Read-during-write needs a concurrent writer; the service and CLI tests prove reads report 'unavailable' "
+        "(never stale data as current) while a refresh holds the database.",
     ),
     ComponentPolicy(
         "A12",

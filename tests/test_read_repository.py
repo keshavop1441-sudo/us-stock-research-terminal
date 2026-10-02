@@ -83,6 +83,7 @@ def test_read_repository_exposes_only_named_read_methods():
         "schema_version", "table_counts", "last_sync", "recent_queries", "find_securities_by_ticker",
         "find_securities_by_cik", "price_history", "list_watchlists",
         "market_quotes", "securities_of_issuers", "financial_facts", "filings", "fact_support_notes",  # v3 named reads
+        "price_source", "quote_source", "facts_source", "last_price_bar",  # provenance reads for research outputs
     }  # fmt: skip
     assert not public & RAW_ACCESS_NAMES
 

@@ -1284,12 +1284,32 @@ metrics:
     formula: "margin_now - margin_prior (both OK)."
     missing_data_behavior: "Either non-OK -> that state."
     negative_data_behavior: "Margins can be negative; the difference stays defined."
-    restatement_behavior: "Same vintage."
+    restatement_behavior: "Same vintage. The snapshot (gross/operating/net_margin_change_yoy) takes the numerator AND revenue of BOTH years from one filing; otherwise NOT_COMPARABLE (MARGIN_INPUTS_FROM_DIFFERENT_FILINGS)."
     status: DERIVED
     fallback: "none"
     limitations: "Percentage points, not percent."
     rule_function: margin_change
     sample_tested: {live: true, evidence: [E_UNIT, E_FIXTURE_LIVE], symbols: [RIVN]}
+
+  - metric: leverage_change
+    category: derived
+    canonical_definition: "Change in debt/equity between two fiscal-year-end balance sheets, in ratio points (positive = leverage rose). Screening input for 'leverage not worsening' (debt_to_equity_change_yoy <= 0)."
+    source: "derived"
+    provider: derived
+    command: "derived"
+    identifier: "cik"
+    period: "latest fiscal year end vs one year earlier"
+    direct_or_derived: derived
+    inputs: [debt_to_equity]
+    formula: "debt_to_equity(now) - debt_to_equity(prior); both from the single annual filing that carries the fiscal year's revenue pair."
+    missing_data_behavior: "Any core debt line absent for either date -> total_debt MISSING_INPUT -> this metric MISSING_INPUT (absent is never zero)."
+    negative_data_behavior: "Negative equity in either year -> NOT_MEANINGFUL (a negative ratio would read as low leverage)."
+    restatement_behavior: "Both balance sheets are read from ONE filing (StatementIndex.select(accession=...)); later filings never leak in."
+    status: DERIVED
+    fallback: "none"
+    limitations: "Fiscal-year basis only (not the latest quarter). Operating-lease liabilities are excluded, as in total_debt."
+    rule_function: leverage_change
+    sample_tested: {live: false, evidence: [E_UNIT], symbols: []}
 
   - metric: price_to_sales
     category: derived

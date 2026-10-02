@@ -1,7 +1,7 @@
 """Explicit, parameterised READ operations.
 
-This is the only database interface that may ever be handed to the AI tool layer. It exposes named
-read methods, never SQL, and holds no write operations. It does NOT depend on ``write_repository``.
+This is the only database interface the research commands read through. It exposes named read methods,
+never SQL, and holds no write operations. It does NOT depend on ``write_repository``.
 (A DuckDB ``read_only`` connection cannot coexist with the application's read-write connections in one
 process, so the boundary is the interface, not a connection flag.)
 """
@@ -72,6 +72,13 @@ class ReadRepository:
             [security_id],
         )
 
+    def last_price_bar(self, security_id: int) -> tuple | None:
+        """(trade_date, close) of the newest stored price bar of a listing, or None if it has none."""
+        return self._con.execute(
+            "SELECT trade_date, close FROM price_daily WHERE security_id = ? ORDER BY trade_date DESC LIMIT 1",
+            [security_id],
+        ).fetchone()
+
     def market_quotes(self, security_id: int) -> pl.DataFrame:
         """Provider quotes of one listing, newest first."""
         return self._frame(
@@ -86,6 +93,41 @@ class ReadRepository:
             "SELECT security_id, cik, ticker, name, exchange, sector, industry, sector_source, sic, sic_source "
             "FROM securities ORDER BY cik, ticker"
         )
+
+    # --- provenance of what a research answer was built from ---------------------------------------------------------
+
+    _SOURCE_COLUMNS = (
+        "s.source_id, s.provider, s.dataset, s.command, s.url, s.retrieved_at, s.as_of, s.content_hash, "
+        "s.is_fallback, s.provider_version"
+    )
+
+    def price_source(self, security_id: int) -> dict | None:
+        """The retrieval that produced the NEWEST stored price bar of a listing."""
+        rows = self._frame(
+            f"SELECT {self._SOURCE_COLUMNS} FROM price_daily p JOIN sources s ON s.source_id = p.source_id "
+            "WHERE p.security_id = ? ORDER BY p.trade_date DESC LIMIT 1",
+            [security_id],
+        ).to_dicts()
+        return rows[0] if rows else None
+
+    def quote_source(self, security_id: int) -> dict | None:
+        """The retrieval that produced the NEWEST stored provider quote of a listing."""
+        rows = self._frame(
+            f"SELECT {self._SOURCE_COLUMNS} FROM market_quotes q JOIN sources s ON s.source_id = q.source_id "
+            "WHERE q.security_id = ? ORDER BY q.quote_date DESC LIMIT 1",
+            [security_id],
+        ).to_dicts()
+        return rows[0] if rows else None
+
+    def facts_source(self, cik: int | str) -> dict | None:
+        """The latest SEC ``companyfacts`` retrieval of an issuer (it also explains an unsupported taxonomy)."""
+        parameters = json.dumps({"cik": normalize_cik(cik)}, sort_keys=True)
+        rows = self._frame(
+            f"SELECT {self._SOURCE_COLUMNS} FROM sources s WHERE s.provider = 'sec' AND s.dataset = 'companyfacts' "
+            "AND s.parameters = ? ORDER BY s.retrieved_at DESC, s.source_id DESC LIMIT 1",
+            [parameters],
+        ).to_dicts()
+        return rows[0] if rows else None
 
     # --- accounting facts and filings ---------------------------------------------------------------
 

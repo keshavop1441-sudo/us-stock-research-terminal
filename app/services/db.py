@@ -1,6 +1,7 @@
 """Service-layer database access: repositories plus translation of low-level failures.
 
-UI code never imports ``app.database``; it calls service functions, which use these helpers.
+The research commands (``app.cli``) never import ``app.database.access``; they call service functions, which use
+these helpers or open a repository themselves.
 """
 
 from collections.abc import Iterator
