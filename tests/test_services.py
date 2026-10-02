@@ -37,7 +37,7 @@ def test_status_of_a_missing_database_does_not_create_it(app_env):
 def test_status_of_an_initialised_database_is_live(settings):
     status = status_service.collect_data_status(settings)
     assert status.data_state == "live" and status.notice is None
-    assert status.database.initialized and status.database.schema_version == 2
+    assert status.database.initialized and status.database.schema_version == 3
     assert status.counts["securities"] == 0 and status.last_sync is None
     assert status.as_of is not None and status.refresh.active is False
     assert status.openbb.all_installed and status.ollama.available is False

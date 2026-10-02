@@ -12,6 +12,7 @@ from app.database import access
 from app.database.connection import ensure_database, is_lock_conflict
 from app.database.errors import DatabaseLockedError, DatabaseUnavailableError, WriterBusyError
 from app.database.locking import WriterLock, info_path, lock_path, writer_status
+from app.database.schema import SCHEMA_VERSION
 
 
 def test_normal_acquisition_and_release(db_path):
@@ -139,7 +140,7 @@ def test_reader_waits_out_a_short_lock(db_path, hold):
     with hold("duckdb-only") as holder:
         threading.Timer(0.4, holder.stdin.close).start()  # the other process lets go shortly
         with access.reader(db_path, wait=5.0) as r:
-            assert r.schema_version() == 2
+            assert r.schema_version() == SCHEMA_VERSION
 
 
 def test_readers_and_writers_never_create_the_database_file(tmp_path):
@@ -153,7 +154,7 @@ def test_readers_and_writers_never_create_the_database_file(tmp_path):
 
 def test_ensure_database_on_a_current_database_needs_no_writer_lock(db_path, hold):
     with hold("lock-only"):
-        assert ensure_database(db_path) == 2  # fast path: reads only
+        assert ensure_database(db_path) == SCHEMA_VERSION  # fast path: reads only
 
 
 def test_ensure_database_needing_changes_waits_for_the_writer_lock(tmp_path, hold):
@@ -161,7 +162,7 @@ def test_ensure_database_needing_changes_waits_for_the_writer_lock(tmp_path, hol
     duckdb.connect(str(uninitialised)).close()  # a database file without a schema
     with hold("lock-only", path=uninitialised), pytest.raises(WriterBusyError):
         ensure_database(uninitialised, lock_timeout=0.2)
-    assert ensure_database(uninitialised) == 2
+    assert ensure_database(uninitialised) == SCHEMA_VERSION
 
 
 def test_paths_are_plain_pathlib(db_path):

@@ -6,7 +6,9 @@ from pathlib import Path
 import pytest
 
 from app.database import access, read_repository, write_repository
+from app.database.quality_repository import QualityRepository
 from app.database.read_repository import ReadRepository
+from app.database.schema import SCHEMA_VERSION
 from app.database.write_repository import WriteRepository
 from app.models.identifiers import InvalidCikError, InvalidTickerError
 from app.models.records import PriceRecord, SecurityRecord, SourceRecord
@@ -34,7 +36,7 @@ def test_reads_return_polars_frames_with_stable_types(db_path):
         assert r.find_securities_by_ticker("AAPL").is_empty()
         assert r.recent_queries().is_empty()
         assert r.list_watchlists().is_empty()
-        assert r.schema_version() == 2
+        assert r.schema_version() == SCHEMA_VERSION
         assert r.last_sync() is None
 
 
@@ -80,12 +82,13 @@ def test_read_repository_exposes_only_named_read_methods():
     assert public == {
         "schema_version", "table_counts", "last_sync", "recent_queries", "find_securities_by_ticker",
         "find_securities_by_cik", "price_history", "list_watchlists",
+        "market_quotes", "securities_of_issuers", "financial_facts", "filings",  # v3 (Phase 3A) named reads
     }  # fmt: skip
     assert not public & RAW_ACCESS_NAMES
 
 
 def test_neither_repository_offers_raw_sql_or_a_public_connection(db_path):
-    for cls in (ReadRepository, WriteRepository):
+    for cls in (ReadRepository, WriteRepository, QualityRepository):
         members = {n for n in dir(cls) if not n.startswith("_")}
         assert not members & RAW_ACCESS_NAMES, (cls.__name__, members & RAW_ACCESS_NAMES)
         for name, method in inspect.getmembers(cls, inspect.isfunction):

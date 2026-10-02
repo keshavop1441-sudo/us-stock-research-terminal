@@ -5,9 +5,14 @@ A local Windows application for researching US stocks. You will type requests su
 cash flow, P/S below 5..."* and the terminal will screen the market and investigate the survivors
 (filings, contracts, lawsuits, insider and institutional activity, earnings, news).
 
-> **Status: foundation, hardened (Phase 1), data-source audit done (Phase 2).** Phase 2 changed no
+> **Status: foundation, hardened (Phase 1), data-source audit done (Phase 2), P0 ingestion pilot built (Phase 3A).** Phase 2 changed no
 > product behaviour: it produced the coverage matrix in [`docs/data_coverage.md`](docs/data_coverage.md),
 > executable metric rules and recorded fixtures. No provider data is ingested.
+>
+> **Phase 3A:** the ingestion path (SEC identity/filings/companyfacts, Cboe/Nasdaq prices and quotes through OpenBB) is implemented and tested on
+> simulated providers, and runs on 14 representative securities with `scripts/run_p0.py`. **No live run has been made from the development sandbox**
+> (no network, no `SEC_USER_AGENT`), so nothing is claimed about live provider behaviour beyond the Phase 2 audit. See
+> [`docs/data_coverage.md`](docs/data_coverage.md) section 13. There is still no screener, agent or research page.
 >
 > **Phase 1 status:** The app starts, the database exists with an idempotent
 > write path, the pages are laid out, and health checks work. There is **no screening engine, no data
@@ -110,7 +115,8 @@ DuckDB allows one read-write process per file, so the design is a simple explici
 | `securities` | `(ticker, cik)` | cik may be unknown and is filled in later; enforced by the repository (DuckDB cannot update an indexed column of a foreign-key-referenced row) |
 | `financial_facts` | `(cik, taxonomy, concept, unit, period_start, period_end, accession_no)` | one value as reported in one filing; later restatements are separate rows |
 | `filings` | `accession_no` | |
-| `price_daily` | `(security_id, trade_date)` | |
+| `price_daily` | `(security_id, trade_date)` | `close` is split-adjusted, not dividend-adjusted; `adj_close` stays NULL |
+| `market_quotes` | `(security_id, quote_date)` | provider quote on the provider's own date; its `market_cap` is price x ALL issuer shares for that listing |
 | `earnings` | `(cik, fiscal_year, fiscal_period)` | the report date is an attribute (announced dates move) |
 | `ownership` | `(cik, holder_type, holder_key, as_of_date, accession_no, line_no)` | holder_key = holder CIK, else normalised name |
 | `events` | `(cik, event_type, source_ref)` | source_ref = URL / accession+item / provider id |
@@ -118,7 +124,10 @@ DuckDB allows one read-write process per file, so the design is a simple explici
 
   Keys with nullable parts are stored in a `*_key` primary-key column tied to its components by a CHECK
   constraint, so NULLs cannot defeat de-duplication. Reloading uses `INSERT ... ON CONFLICT DO UPDATE`
-  (in-batch duplicates: last wins); tables are never deleted and reloaded.
+  (in-batch duplicates: last wins); tables are never deleted and reloaded. Every upsert reports **inserted / updated / unchanged /
+  duplicates**: an identical record is not rewritten and keeps the `source_id` of the retrieval that first produced it.
+* **Provenance (schema v3):** every retrieval is one append-only `sources` row: provider, dataset, URL, `command`, `parameters` (JSON), `provider_version`,
+  the provider's own `as_of` where stated, `content_hash`, `is_fallback`, and the path of the verbatim payload kept beside the database.
 * **Not solved yet (Phase 2 concern):** a company that *changes ticker* appears as a new `securities` row
   until a symbol-history source is added; share-class ticker spellings (`BRK.B`/`BRK-B`/`BRK/B`) are not
   reconciled; the same real-world event reported by two sources has two `source_ref`s.
@@ -156,7 +165,7 @@ Copy `.env.example` to `.env` (git-ignored). No API keys are needed for the curr
 | `FAST_THINK` | `false` | Fast reasoning mode (wins if both flags are true) |
 | `DEEP_THINK` | `true` | Deep reasoning mode |
 | `DATABASE_PATH` | `data/research.duckdb` | Relative paths resolve against the project root |
-| `SEC_USER_AGENT` | unset | **Required for any SEC download.** `<ApplicationName> <contact email or URL>`, e.g. `MyResearchTerminal you@your-domain.example` |
+| `SEC_USER_AGENT` | unset | **Required for any SEC download (the P0 pilot refuses to start without it).** `<ApplicationName> <contact email or URL>`, e.g. `MyResearchTerminal you@your-domain.example` |
 
 `SEC_USER_AGENT` is an environment variable (or a line in your git-ignored `.env`), never a value in the repository. The SEC's fair-access policy requires every
 request to identify the caller with an application or organisation name plus a way to contact you; a generic agent without a contact was refused with HTTP 403
@@ -171,7 +180,7 @@ does not guess one. For the provider-probe workflow, set the same value as the r
 ```
 
 Tests cover configuration; identifiers; DuckDB->Polars conversion (including a subprocess where
-pyarrow/pandas/numpy cannot be imported); schema, constraints and the v1->v2 migration; idempotent upserts
+pyarrow/pandas/numpy cannot be imported); schema, constraints and the v1->v2->v3 migrations; the P0 pipeline end to end on simulated providers (idempotency, provenance, 403/429/lock/partial-failure handling); idempotent upserts
 for every table; read/write repository separation; cross-process locking (a real second process, including
 being killed); stale/unavailable behaviour while a refresh runs; every page via Streamlit `AppTest`; layering
 rules; tool-registry validation; the bootstrapper; the launcher (including a real start/health/stop cycle);
@@ -208,24 +217,36 @@ app/
   ui/              One script per page + helpers (no SQL, no database imports)
   services/        Use-cases for the UI; the only layer that opens repositories
   database/        schema, migrations, locking, connection, access, read_repository, write_repository, frames
-  models/          identifiers (CIK/ticker), symbols (share-class spellings), periods, records (write inputs), status models
+  models/          identifiers (CIK/ticker), symbols (share-class spellings), periods, records (write inputs), concepts (P0 XBRL tags), status models
+  ingestion/       Phase 3A: manifest, SEC HTTP client (rate limit, bounded retries), source fetchers, normalisers, request stats, P0 report
   agent/           LLMProvider abstraction, OllamaProvider (availability detection only)
   tools/           Tool registry (no tools yet)
   data/            OpenBB V5 access (lazy import)
-  screening/       metrics.py: executable metric rules (N/A states, comparability); the screener itself is planned
+  screening/       metrics.py (metric rules), fundamentals.py (tag selection, periods, TTM), snapshot.py (all metrics of one issuer); the screener is planned
   research/        (planned)
 docs/              data_coverage.yaml (machine-readable Phase 2 coverage matrix) + data_coverage.md
-scripts/           bootstrap_env.py, launch_terminal.py, init_db.py, update_data.py, setup_env.bat,
+scripts/           bootstrap_env.py, launch_terminal.py, init_db.py, update_data.py, run_p0.py (live P0 pilot), setup_env.bat,
                    audit/probe_providers.py (read-only provider probe, run by .github/workflows/provider-probe.yml)
 tests/             pytest suite + hold_database.py / minimal_frames_check.py helpers
 data/              research.duckdb lives here (git-ignored)
 ```
 
+## Phase 3A: the P0 ingestion pilot
+
+```bat
+set SEC_USER_AGENT=MyResearchTerminal you@your-domain.example
+.venv\Scripts\python scripts\run_p0.py
+```
+
+Applies the schema migration, ingests the 14 pinned P0 securities into a separate database (`data/p0_pilot.duckdb`), validates it, runs **the same
+ingestion again**, checks idempotency and writes `data/p0_reports/p0_report_<time>.json` and `.md` (measurements and a PASS / FAIL / NOT_EVALUATED table
+against the Phase 2 criteria A1-A13). Without `SEC_USER_AGENT` it makes no request and says so (exit code 3). `python tests/p0_rehearsal.py` runs the
+same sequence on **simulated** providers (mechanics only, stamped SIMULATED). The P0 set is listed in `app/ingestion/manifest.py` and documented in
+`docs/data_coverage.md` section 13. P1 (about 300 securities) is not built and is gated on a passing live P0 report.
+
 ## Remaining work
 
-1. Phase 3 loaders (via OpenBB and the SEC endpoints named in `docs/data_coverage.md`): securities + CIK map, SEC company
-   facts (raw points with accession/filed date), prices, filings, earnings, ownership, news/events. First apply the
-   schema changes listed in `docs/data_coverage.md` section 9 (`sources` command/parameters/version/as-of).
+1. A passing **live** P0 report, then P1/P2 (Phase 2 `universe_pilot`), then the remaining loaders: earnings, ownership, news/events.
 2. Screening engine; natural-language -> structured screen (LLM generation, first read-only tools).
 3. Company research page and research-run workflow.
 4. Watchlist items, saved screens, charts.

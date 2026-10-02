@@ -68,6 +68,39 @@ class ReadRepository:
             [security_id],
         )
 
+    def market_quotes(self, security_id: int) -> pl.DataFrame:
+        """Provider quotes of one listing, newest first."""
+        return self._frame(
+            "SELECT quote_date, last_price, market_cap, year_high, year_low FROM market_quotes "
+            "WHERE security_id = ? ORDER BY quote_date DESC",
+            [security_id],
+        )
+
+    def securities_of_issuers(self) -> pl.DataFrame:
+        """Every stored listing with its issuer and classification provenance."""
+        return self._frame(
+            "SELECT security_id, cik, ticker, name, exchange, sector, industry, sector_source, sic, sic_source "
+            "FROM securities ORDER BY cik, ticker"
+        )
+
+    # --- accounting facts and filings ---------------------------------------------------------------
+
+    def financial_facts(self, cik: int | str) -> pl.DataFrame:
+        """Every stored as-reported fact of an issuer (all vintages)."""
+        return self._frame(
+            "SELECT taxonomy, concept, unit, value, period_start, period_end, fiscal_year, fiscal_period, form, "
+            "filed_date, accession_no, frame FROM financial_facts WHERE cik = ? "
+            "ORDER BY concept, period_end, filed_date, accession_no",
+            [normalize_cik(cik)],
+        )
+
+    def filings(self, cik: int | str) -> pl.DataFrame:
+        return self._frame(
+            "SELECT accession_no, form, filing_date, report_date, primary_document, url FROM filings "
+            "WHERE cik = ? ORDER BY filing_date DESC, accession_no",
+            [normalize_cik(cik)],
+        )
+
     # --- watchlists --------------------------------------------------------------------
 
     def list_watchlists(self) -> pl.DataFrame:

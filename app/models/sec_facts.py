@@ -78,6 +78,7 @@ class RawFactPoint(BaseModel):
             form=self.form,
             filed_date=self.filed,
             accession_no=self.accession,
+            frame=self.frame,
             source_id=source_id,
         )
 

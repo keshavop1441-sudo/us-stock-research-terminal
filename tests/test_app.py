@@ -126,7 +126,7 @@ def test_data_status_on_empty_database(app_env):
         "Last synchronization": "Never",
     }
     text = " ".join(m.value for m in at.markdown)
-    assert "Ready (schema v2)" in text
+    assert "Ready (schema v3)" in text
     assert OLLAMA_DOWN.search(text) and ":red[" in text
     assert str(app_env) in [t.value for t in at.text_input]
 

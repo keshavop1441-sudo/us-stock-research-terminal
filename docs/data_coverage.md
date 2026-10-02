@@ -1,6 +1,6 @@
 # Phase 2: data-source and metric coverage audit
 
-Status: **audit only**. No production ingestion, no screener, no AI agent. The machine-readable matrix is
+Status: **audit (Phase 2), plus the Phase 3A P0 pilot section at the end** (section 13). No screener, no AI agent. The machine-readable matrix is
 [`data_coverage.yaml`](data_coverage.yaml) (the source of truth; the metric table at the bottom of this file is generated
 from it and checked by `tests/test_data_coverage.py`). Executable metric rules: `app/screening/metrics.py`.
 
@@ -135,7 +135,9 @@ window), `provider_version`, and the provider's own `as_of` timestamp. These are
 * Shape only (`API_SHAPE_VERIFIED`): analyst price-target consensus, dividend history.
 * Not verified anywhere: Windows behaviour of the probe or providers; behaviour for tickers other than the sampled ones.
 
-## 9. Required before Phase 3
+## 9. Required before Phase 3 (applied in schema v3, Phase 3A)
+
+*Status: all of the schema items below were applied by the v2 -> v3 migration, except the insider-only and awards items noted. See section 13.*
 
 Schema (see YAML `source_evidence_model` and `schema_gaps`): add `sources.command`, `sources.parameters`, `sources.provider_version`,
 `sources.as_of`; require `source_id` on ingested rows in the service layer; extend `ownership` with price, post-transaction shares,
@@ -190,6 +192,37 @@ recent IPOs, financials, ADRs, discontinued CIKs. Twelve measurements (identity,
 provider warnings, time, upsert behaviour, cross-source agreement) and thirteen numeric acceptance criteria, for example: identity >= 99%; 0 duplicate
 logical keys after load and after a re-run; second identical run inserts 0 rows; SEC <= 9 requests/second with 0 403/429; failures <= 1%; core fields missing <= 5%
 for industrial filers; 0 zero-debt values without evidence; 100% of rows with provenance. Any failure stops scaling and the whole pilot is re-run.
+
+## 13. Phase 3A: the P0 ingestion pilot
+
+Scope: prove the production ingestion path end to end on 14 securities (13 issuers); nothing else (no P1/P2, no screener, no agent).
+Machine-readable description: YAML `p0_pilot`. Code: `app/ingestion/`, `app/services/ingestion_service.py`, `scripts/run_p0.py`.
+
+**Schema v3** (migration `_migrate_2_to_3`, additive): `sources.command / parameters / provider_version / as_of / is_fallback`;
+`financial_facts.frame`; the seven ownership transaction fields (G1, no insider data is ingested yet); `securities.sector_source` and
+`sic_source` (G6); and one new table, `market_quotes` (`(security_id, quote_date)`), because the quoted market cap and the provider's 52-week
+range are raw inputs with no other home. It is the only addition beyond the Phase 2 list.
+
+**Set** (pinned, `app/ingestion/manifest.py`): AAPL, NVDA, AMD, GOOGL, GOOG, BRK-B, META, RIVN, PTON, KOSS, COST, JPM, TSM, TSLA, chosen from the audit's
+observed cases (large tech, semiconductors, multi-class, loss-making, non-calendar fiscal years, financials, small cap, an ADR, the `BRK-B`/`BRK.B`
+spelling, edge reporting, amendments). Deviation from the YAML's P0 stage: wider than 5-10 symbols, and TWTR is not included (a retired ticker is not in
+the SEC ticker map the pipeline resolves identity from).
+
+**Flow**: SEC ticker map and submissions (identity, filings index) -> Cboe daily bars with Nasdaq fallback (`is_fallback`) -> Nasdaq quote (market cap,
+52-week range, raw sector/industry) -> SEC `companyfacts` (canonical accounting facts, every accession kept) -> validation -> derived metrics computed at read
+time from the stored rows (nothing derived is stored). Every retrieval is a `sources` row with command, parameters, provider version, the provider's own
+as-of time where it states one, a content hash and a link to the verbatim payload saved beside the database.
+
+**Findings while building it** (kept here because they bear on the audit): (1) Phase 2 documented candidate tags in its probe script and an
+OpenBB-field-to-concept dictionary, but not executable "tested tag selection logic"; `app/models/concepts.py` is new, and only the tags the probe actually
+requested are marked live-probed in the YAML (`p0_pilot.tag_selection`). The others are NOT_VERIFIED until a live run reports them. (2) The TTM
+per-share sum needed a split guard the audit did not specify (NVDA's FY2024 EPS vintage trap makes a naive FY + YTD - YTD EPS wrong by the split ratio);
+the guard is documented in the YAML and tested. (3) `net_income` means `NetIncomeLoss` only; the dictionary's earlier `ProfitLoss` fallback is gone.
+
+**What has and has not been run.** The development sandbox cannot reach SEC, Nasdaq or Cboe and has no `SEC_USER_AGENT`, so **no live P0 run exists from
+there**: the hermetic tests and the offline rehearsal (`python tests/p0_rehearsal.py`) use simulated providers and prove mechanics only. A live run needs
+`SEC_USER_AGENT` and `python scripts/run_p0.py` (or the manual GitHub workflow `p0-ingestion.yml`). Its report compares the measurements with A1-A13 and
+marks every criterion it could not measure `NOT_EVALUATED`. P1 is gated on a passing live report.
 
 ## 11. Metric table (generated)
 

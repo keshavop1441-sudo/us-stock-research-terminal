@@ -7,8 +7,8 @@ The business keys are documented in ``app.database.schema``.
 """
 
 import re
-from datetime import date
-from typing import Annotated
+from datetime import date, datetime
+from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, model_validator
 
@@ -50,7 +50,12 @@ class SourceRecord(Record):
     dataset: IdentityText
     url: str | None = None
     content_hash: str | None = None
-    detail: str | None = None
+    detail: str | None = None  # free text; structured data belongs in command / parameters
+    command: str | None = None  # endpoint or OpenBB command, e.g. 'obb.cboe.equity.historical'
+    parameters: str | None = None  # JSON text of the arguments (sorted keys)
+    provider_version: str | None = None  # e.g. 'openbb-cboe 2.0.0'
+    as_of: datetime | None = None  # the provider's own timestamp of the data (naive UTC); None = unknown
+    is_fallback: bool = False  # True when this retrieval replaced a failed/empty primary source
 
 
 class SecurityRecord(Record):
@@ -63,6 +68,8 @@ class SecurityRecord(Record):
     industry: str | None = None
     sic: str | None = None
     is_active: bool | None = None
+    sector_source: str | None = None  # system that produced sector AND industry (e.g. 'nasdaq')
+    sic_source: str | None = None  # system that produced sic (e.g. 'sec')
 
 
 class FinancialFactRecord(Record):
@@ -78,6 +85,7 @@ class FinancialFactRecord(Record):
     form: str | None = None
     filed_date: date | None = None
     accession_no: OptionalIdentityText = None
+    frame: str | None = None  # SEC frame label of the point (e.g. 'CY2025Q4I'); an attribute, not part of the key
     source_id: int | None = None
 
     @property
@@ -119,6 +127,19 @@ class PriceRecord(Record):
     source_id: int | None = None
 
 
+class MarketQuoteRecord(Record):
+    """One provider quote for one listing on the provider's own as-of date. ``market_cap`` is the provider's figure
+    for that listing (price x ALL issuer shares), never a security-specific cap."""
+
+    security_id: int
+    quote_date: date
+    last_price: FiniteFloat | None = None
+    market_cap: FiniteFloat | None = None
+    year_high: FiniteFloat | None = None
+    year_low: FiniteFloat | None = None
+    source_id: int | None = None
+
+
 class EarningsRecord(Record):
     cik: Cik
     fiscal_year: int
@@ -152,6 +173,13 @@ class OwnershipRecord(Record):
     shares_change: FiniteFloat | None = None
     transaction_code: str | None = None
     form: str | None = None
+    transaction_price: FiniteFloat | None = None
+    shares_owned_after: FiniteFloat | None = None
+    acquired_disposed: Literal["A", "D"] | None = None
+    is_derivative: bool | None = None
+    security_title: str | None = None
+    ownership_nature: Literal["D", "I"] | None = None
+    is_10b5_1: bool | None = None  # None = the provider does not expose it
     source_id: int | None = None
 
     @model_validator(mode="after")

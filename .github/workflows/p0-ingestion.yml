@@ -1,0 +1,35 @@
+name: P0 ingestion pilot (live)
+
+# Phase 3A. Runs the LIVE P0 pilot (14 securities, scripts/run_p0.py) from a GitHub-hosted runner, because the development
+# sandbox cannot reach SEC / Nasdaq / Cboe. Manual only. Needs the repository variable SEC_USER_AGENT
+# ("<ApplicationName> <contact email or URL>", the operator's own contact: never committed). Without it the script refuses to
+# start, makes no request and uploads a report that says so. It never starts P1 or P2.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  p0:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - run: python -m pip install --require-hashes -r requirements.lock
+      - name: Run P0 (ingest, validate, ingest again, validate idempotency, report)
+        env:
+          SEC_USER_AGENT: ${{ vars.SEC_USER_AGENT }}
+        run: python scripts/run_p0.py --db "$RUNNER_TEMP/p0_pilot.duckdb" --out-dir p0_report
+      - name: Publish the report summary
+        if: always()
+        run: cat p0_report/*.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p0-report
+          path: p0_report/
