@@ -1,0 +1,75 @@
+{
+ "_probe": "ownership_events insider.sec.AAPL, insider.nasdaq.AAPL, institutional.nasdaq.AAPL.all (run 36954761165)",
+ "sec_insider_rows": [
+  {
+   "form": "4",
+   "transaction_type": "Open market or private sale of non-derivative or derivative security",
+   "acquisition_or_disposition": "Disposition",
+   "security_type": "Common Stock",
+   "securities_transacted": 2399.0,
+   "transaction_price": 336.18,
+   "securities_owned": 41992.0,
+   "ownership_type": "Direct",
+   "transaction_value": null
+  },
+  {
+   "form": "4",
+   "transaction_type": "Grant, award or other acquisition pursuant to Rule 16b-3(d)",
+   "acquisition_or_disposition": "Acquisition",
+   "security_type": "Restricted Stock Unit",
+   "securities_transacted": 47645.0,
+   "transaction_price": 0.0,
+   "securities_owned": 47645.0,
+   "ownership_type": "Direct",
+   "transaction_value": null
+  }
+ ],
+ "sec_insider_description_counts_AAPL": {
+  "Grant, award or other acquisition pursuant to Rule 16b-3(d)": 13,
+  "Open market or private sale of non-derivative or derivative security": 8,
+  "Exercise or conversion of derivative security exempted pursuant to Rule 16b-3": 2,
+  "Payment of exercise price or tax liability by delivering or withholding securities incident to the receipt, exercise or vesting of a security issued in accordance with Rule 16b-3": 1
+ },
+ "nasdaq_insider_row": {
+  "transaction_type": "Automatic Sell",
+  "securities_transacted": 2399.0,
+  "transaction_price": 340.06,
+  "filing_date": null,
+  "filing_url": null,
+  "owner_cik": null
+ },
+ "nasdaq_institutional_rows": [
+  {
+   "date": "2025-12-31",
+   "shares_held": 1426283914.0,
+   "shares_change": 26856752.0,
+   "market_value": 474981069.0
+  },
+  {
+   "date": "2026-06-30",
+   "shares_held": 1162996939.0,
+   "shares_change": 18301514.0,
+   "market_value": 387301241.0
+  },
+  {
+   "date": "2026-06-30",
+   "shares_held": 959107911.0,
+   "shares_change": 5260263.0,
+   "market_value": 319402117.0
+  }
+ ],
+ "nasdaq_institutional_cik_column": "all null",
+ "sec_13f_BRK_B": {
+  "period_ending": "2026-06-30",
+  "n_holdings": 29,
+  "total_value": 299253556246,
+  "first_holding": {
+   "issuer": "APPLE INC",
+   "cusip": "037833100",
+   "value": 65950296923,
+   "principal_amount": 227917808
+  }
+ },
+ "_note": "Owner names deliberately omitted. Nasdaq market_value for 1.426B AAPL shares is 474,981,069: the unit is USD thousands.",
+ "_recorded": "2026-10-02 (GitHub-hosted runner, UTC ~02:15-02:25)"
+}

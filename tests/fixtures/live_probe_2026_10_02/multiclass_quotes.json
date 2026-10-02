@@ -1,0 +1,31 @@
+{
+ "_probe": "followup.quote_nasdaq.*",
+ "quotes": [
+  {
+   "symbol": "GOOGL",
+   "last_price": 338.24,
+   "market_cap": 4136675200000.0
+  },
+  {
+   "symbol": "GOOG",
+   "last_price": 334.93,
+   "market_cap": 4096193900000.0
+  },
+  {
+   "symbol": "BRK.A",
+   "last_price": 751745.0,
+   "market_cap": 1105722175130.0
+  },
+  {
+   "symbol": "BRK.B",
+   "last_price": 500.5,
+   "market_cap": 1104258841186.0
+  },
+  {
+   "symbol": "AAPL",
+   "last_price": 330.32,
+   "market_cap": 4820749537600.0
+  }
+ ],
+ "_recorded": "2026-10-02 (GitHub-hosted runner, UTC ~02:15-02:25)"
+}

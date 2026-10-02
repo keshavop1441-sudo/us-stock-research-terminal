@@ -1,0 +1,144 @@
+{
+ "_probe": "market week52.*, divadj.*",
+ "week52": [
+  {
+   "symbol": "AAPL",
+   "calc_high_by_high": 345.34,
+   "calc_low_by_low": 243.42,
+   "quote_year_high": 345.34,
+   "quote_year_low": 243.42,
+   "calc_high_by_close": 341.07
+  },
+  {
+   "symbol": "NVDA",
+   "calc_high_by_high": 236.54,
+   "calc_low_by_low": 164.27,
+   "quote_year_high": 236.54,
+   "quote_year_low": 164.27,
+   "calc_high_by_close": 235.74
+  },
+  {
+   "symbol": "MSFT",
+   "calc_high_by_high": 553.72,
+   "calc_low_by_low": 349.2,
+   "quote_year_high": 553.72,
+   "quote_year_low": 349.2,
+   "calc_high_by_close": 542.07
+  }
+ ],
+ "close_same_dates": {
+  "MSFT": {
+   "cboe": [
+    [
+     "2016-10-03",
+     57.42
+    ],
+    [
+     "2016-10-04",
+     57.24
+    ],
+    [
+     "2016-10-05",
+     57.64
+    ],
+    [
+     "2016-10-06",
+     57.74
+    ],
+    [
+     "2016-10-07",
+     57.8
+    ]
+   ],
+   "nasdaq": [
+    [
+     "2016-10-03",
+     57.42
+    ],
+    [
+     "2016-10-04",
+     57.24
+    ],
+    [
+     "2016-10-05",
+     57.64
+    ],
+    [
+     "2016-10-06",
+     57.74
+    ],
+    [
+     "2016-10-07",
+     57.8
+    ]
+   ]
+  },
+  "KO": {
+   "cboe": [
+    [
+     "2016-10-03",
+     42.03
+    ],
+    [
+     "2016-10-04",
+     41.84
+    ],
+    [
+     "2016-10-05",
+     41.81
+    ],
+    [
+     "2016-10-06",
+     41.71
+    ],
+    [
+     "2016-10-07",
+     41.73
+    ]
+   ],
+   "nasdaq": [
+    [
+     "2016-10-03",
+     42.03
+    ],
+    [
+     "2016-10-04",
+     41.84
+    ],
+    [
+     "2016-10-05",
+     41.81
+    ],
+    [
+     "2016-10-06",
+     41.71
+    ],
+    [
+     "2016-10-07",
+     41.73
+    ]
+   ]
+  }
+ },
+ "history_depth": {
+  "cboe_AAPL_first": "2004-01-02",
+  "nasdaq_AAPL_first": "2016-10-03",
+  "cboe_RIVN_first": "2021-11-10",
+  "nasdaq_RIVN_first": "2021-11-11"
+ },
+ "symbol_spelling": {
+  "nasdaq_quote": {
+   "BRK.B": "ok",
+   "BRK/B": "EmptyDataError"
+  },
+  "cboe_quote": {
+   "BRK.B": "ok",
+   "BRK-B": "HTTP 403 application/xml"
+  },
+  "sec_cik_map": {
+   "BRK-B": "0001067983",
+   "BRKB": "not found"
+  }
+ },
+ "_recorded": "2026-10-02 (GitHub-hosted runner, UTC ~02:15-02:25)"
+}

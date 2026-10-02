@@ -1,0 +1,44 @@
+{
+ "_probe": "followup.dei_shares.*",
+ "AAPL": {
+  "tag": "EntityCommonStockSharesOutstanding",
+  "unit": "shares",
+  "latest": [
+   [
+    "2025-10-17",
+    14776353000,
+    "10-K",
+    "2025-10-31"
+   ],
+   [
+    "2026-01-16",
+    14681140000,
+    "10-Q",
+    "2026-01-30"
+   ],
+   [
+    "2026-04-17",
+    14687356000,
+    "10-Q",
+    "2026-05-01"
+   ],
+   [
+    "2026-07-17",
+    14594180000,
+    "10-Q",
+    "2026-07-31"
+   ]
+  ]
+ },
+ "GOOGL": {
+  "dei_tags": [
+   "EntityPublicFloat"
+  ]
+ },
+ "BRK_B": {
+  "tag": "EntityCommonStockSharesOutstanding",
+  "n_points": 7,
+  "last_end": "2011-04-29"
+ },
+ "_recorded": "2026-10-02 (GitHub-hosted runner, UTC ~02:15-02:25)"
+}

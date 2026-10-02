@@ -1,0 +1,78 @@
+{
+ "_probe": "followup.net_income.RIVN",
+ "raw_companyfacts_fy": {
+  "NetIncomeLoss": [
+   [
+    "2024-12-31",
+    -4747000000,
+    "10-K",
+    "2025-02-24"
+   ],
+   [
+    "2024-12-31",
+    -4747000000,
+    "10-K",
+    "2026-02-12"
+   ],
+   [
+    "2025-12-31",
+    -3646000000,
+    "10-K",
+    "2026-02-12"
+   ]
+  ],
+  "ProfitLoss": [
+   [
+    "2024-12-31",
+    -4746000000,
+    "10-K",
+    "2025-02-24"
+   ],
+   [
+    "2024-12-31",
+    -4746000000,
+    "10-K",
+    "2026-02-12"
+   ],
+   [
+    "2025-12-31",
+    -3626000000,
+    "10-K",
+    "2026-02-12"
+   ]
+  ]
+ },
+ "openbb": [
+  {
+   "period_ending": "2025-12-31",
+   "net_income": -3626000000.0,
+   "net_income_to_common": -3646000000.0
+  },
+  {
+   "period_ending": "2024-12-31",
+   "net_income": -4746000000.0,
+   "net_income_to_common": -4747000000.0
+  },
+  {
+   "period_ending": "2023-12-31",
+   "net_income": -5432000000.0,
+   "net_income_to_common": -5432000000.0
+  }
+ ],
+ "income_annual_2025": {
+  "total_revenue": 5387000000.0,
+  "total_cost_of_revenue": 5243000000.0,
+  "total_gross_profit": 144000000.0,
+  "total_operating_income": -3585000000.0,
+  "diluted_eps": -3.07
+ },
+ "income_annual_2024": {
+  "total_revenue": 4970000000.0,
+  "total_cost_of_revenue": 6170000000.0,
+  "total_gross_profit": -1200000000.0,
+  "total_operating_income": -4689000000.0,
+  "diluted_eps": -4.69
+ },
+ "_note": "OpenBB net_income = ProfitLoss (consolidated, incl. non-controlling interest); net_income_to_common = NetIncomeLoss (attributable to parent). _probe fundamentals run for income rows: run 36954761165 / sec.income.RIVN.annual.",
+ "_recorded": "2026-10-02 (GitHub-hosted runner, UTC ~02:15-02:25)"
+}

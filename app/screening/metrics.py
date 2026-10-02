@@ -158,12 +158,16 @@ def total_debt(
     finance_lease_liabilities: object = None,
     *,
     balance_sheet_present: bool,
+    company_type: str | None = None,
 ) -> MetricResult:
     """Financial debt = short-term borrowings + current portion of long-term debt + long-term debt + finance leases.
 
     Operating-lease liabilities are excluded (use a separate, explicitly named metric if wanted).
-    XBRL filers omit zero lines, so an absent COMPONENT counts as zero WITH A FLAG, but only when the balance sheet
-    itself is present for that period; with no balance sheet there is no evidence either way -> MISSING_INPUT.
+    XBRL filers omit zero lines, so for an ``industrial`` filer (OpenBB/SEC ``company_type``) with a balance sheet for
+    the period an absent COMPONENT counts as zero WITH A FLAG. For any other or unknown ``company_type`` an absent
+    component is MISSING_INPUT: the audit found Berkshire Hathaway ("diversified") reports no debt lines at all on a
+    $1.2T balance sheet, so "absent" is not evidence of "zero" there. With no balance sheet there is no evidence
+    either way -> MISSING_INPUT.
     """
     parts = {
         "short_term_debt": _num(short_term_debt),
@@ -176,9 +180,11 @@ def total_debt(
         return _no(MetricState.NOT_MEANINGFUL, "NEGATIVE_DEBT_COMPONENT")
     if not balance_sheet_present:
         return _no(MetricState.MISSING_INPUT, "NO_BALANCE_SHEET")
+    absent = sorted(k for k, v in parts.items() if v is None and k != "finance_lease_liabilities")
+    if absent and company_type != "industrial":
+        return _no(MetricState.MISSING_INPUT, "DEBT_LINES_ABSENT_NON_INDUSTRIAL_OR_UNKNOWN_FILER")
     if not present:
         return _ok(0.0, ("NO_DEBT_LINES_REPORTED_ASSUMED_ZERO",))
-    absent = sorted(k for k, v in parts.items() if v is None and k != "finance_lease_liabilities")
     return _ok(sum(present.values()), tuple(f"ASSUMED_ZERO:{k}" for k in absent))
 
 
@@ -258,6 +264,45 @@ def price_return(close_now: object, close_then: object) -> MetricResult:
     return _ok(now / then - 1, ("PRICE_RETURN_EXCLUDES_DIVIDENDS",))
 
 
+def anchor_date(as_of: date, *, days: int = 0, months: int = 0, years: int = 0) -> date:
+    """``as_of`` minus a calendar horizon (month-end clamped: 31 Mar - 1 month = 28/29 Feb)."""
+    total_months = as_of.year * 12 + (as_of.month - 1) - months - years * 12
+    year, month = divmod(total_months, 12)
+    month += 1
+    first_next = date(year + (month == 12), month % 12 + 1, 1)
+    last_day = (first_next - date.resolution).day
+    return date.fromordinal(date(year, month, min(as_of.day, last_day)).toordinal() - days)
+
+
+def lookback_return(
+    closes: Iterable[tuple[date, float | None]],
+    as_of: date,
+    *,
+    days: int = 0,
+    months: int = 0,
+    years: int = 0,
+    max_gap_days: int = 7,
+) -> MetricResult:
+    """Price return from the last close on/before ``as_of`` to the last close on/before ``as_of`` minus the horizon.
+
+    Horizons are calendar-anchored (1W = 7 days, 1M = 1 calendar month, 1Y = 12 months), never "N trading days",
+    so weekends, holidays and half-days cannot shift the base. If the series starts after the anchor date (recent IPO)
+    or the nearest earlier close is more than ``max_gap_days`` before the anchor (data gap) the result is
+    MISSING_INPUT rather than a shorter-horizon number presented as the requested one.
+    """
+    series = sorted((d, c) for d, c in closes if d <= as_of and _num(c) is not None)
+    if not series:
+        return _no(MetricState.MISSING_INPUT, "PRICE_MISSING")
+    target = anchor_date(as_of, days=days, months=months, years=years)
+    earlier = [(d, c) for d, c in series if d <= target]
+    if not earlier:
+        return _no(MetricState.MISSING_INPUT, "INSUFFICIENT_HISTORY")
+    base_date, base_close = earlier[-1]
+    if (target - base_date).days > max_gap_days:
+        return _no(MetricState.MISSING_INPUT, "BASE_PRICE_STALE")
+    return price_return(series[-1][1], base_close)
+
+
 def drawdown_from_high(close: object, high_52w: object) -> MetricResult:
     """``close / 52-week high - 1`` (<= 0). A close above its own period high signals inconsistent data."""
     c, high = _num(close), _num(high_52w)
@@ -266,6 +311,34 @@ def drawdown_from_high(close: object, high_52w: object) -> MetricResult:
     if c > high * (1 + 1e-9):
         return _no(MetricState.NOT_MEANINGFUL, "CLOSE_ABOVE_HIGH")
     return _ok(c / high - 1)
+
+
+def issuer_market_cap(caps_by_symbol: dict[str, object], primary_symbol: str) -> MetricResult:
+    """One market cap per ISSUER from per-listing quotes.
+
+    The audit (LIVE, 2026-10-02) found Nasdaq's ``market_cap`` is price x ALL shares of the issuer, computed per
+    quoted class: GOOGL 4.137T and GOOG 4.096T describe the same company, BRK.A and BRK.B likewise. Summing the
+    listings double counts, so the issuer value is the designated primary class's figure only, flagged when other
+    classes exist. A missing primary figure is MISSING_INPUT, not a silent switch to another class.
+    """
+    value = _num(caps_by_symbol.get(primary_symbol))
+    if value is None or value <= 0:
+        return _no(MetricState.MISSING_INPUT, "PRIMARY_CLASS_MARKET_CAP_MISSING")
+    others = [k for k in caps_by_symbol if k != primary_symbol]
+    return _ok(value, ("MULTI_CLASS_ALL_SHARES_AT_PRIMARY_PRICE",) if others else ())
+
+
+def consistent_report_period(report_dates: Iterable[date | None]) -> MetricResult:
+    """Do holder rows share one reporting period? Mixed periods must not be summed into one 'ownership' number.
+
+    Nasdaq's institutional list for AAPL mixed 2025-12-31 (Vanguard Group Inc) with 2026-06-30 rows (LIVE).
+    """
+    dates = list(report_dates)
+    if not dates or any(d is None for d in dates):
+        return _no(MetricState.MISSING_INPUT, "REPORT_DATE_MISSING")
+    if len(set(dates)) > 1:
+        return _no(MetricState.NOT_COMPARABLE, "MIXED_REPORT_PERIODS")
+    return _ok(1.0)
 
 
 def high_low_52w(
@@ -367,6 +440,36 @@ def latest_known(points: Sequence[FactPoint], *, as_of: date | None = None) -> F
     return max(known, key=lambda p: (p.filed, p.accession)) if known else None
 
 
+def same_filing_pair(
+    points: Sequence[FactPoint],
+    period_end_now: date,
+    period_end_prior: date,
+    *,
+    as_of: date | None = None,
+) -> tuple[FactPoint, FactPoint] | None:
+    """The (current, prior) values of ONE concept taken from ONE filing, so both are on the same basis.
+
+    Per-share figures and restated amounts change between filings (the audit saw NVDA's FY2024 diluted EPS as 1.19
+    in one vintage and 11.93 in another around its 10-for-1 split, next to an FY2023 figure still on the old basis).
+    A year-over-year comparison is only valid when both numbers come from the same accession; the filing used is the
+    most recently filed one (not after ``as_of``) that reports BOTH periods. Returns None if no filing has both.
+    ``points`` are all vintages of one concept and one duration length (e.g. fiscal-year EPS).
+    """
+    by_accession: dict[str, dict[date, FactPoint]] = {}
+    for point in points:
+        if as_of is None or point.filed <= as_of:
+            by_accession.setdefault(point.accession, {})[point.period_end] = point
+    candidates = [
+        (periods[period_end_now].filed, accession, periods[period_end_now], periods[period_end_prior])
+        for accession, periods in by_accession.items()
+        if period_end_now in periods and period_end_prior in periods
+    ]
+    if not candidates:
+        return None
+    _, _, now, prior = max(candidates, key=lambda c: (c[0], c[1]))
+    return now, prior
+
+
 def was_restated(points: Sequence[FactPoint]) -> bool:
     """True if different filings reported different values for the same period."""
     return len({p.value for p in points}) > 1
@@ -419,6 +522,45 @@ def classify_form4(transaction_code: str | None) -> Form4Class:
     if not transaction_code:
         return Form4Class.UNKNOWN
     return _FORM4_CODES.get(transaction_code.strip().upper(), Form4Class.UNKNOWN)
+
+
+_FORM4_DESCRIPTIONS = {
+    "Grant, award or other acquisition pursuant to Rule 16b-3(d)": "A",
+    "Conversion of derivative security": "C",
+    "Disposition to the issuer of issuer equity securities pursuant to Rule 16b-3(e)": "D",
+    "Expiration of short derivative position": "E",
+    "Payment of exercise price or tax liability by delivering or withholding securities incident to the receipt, "
+    "exercise or vesting of a security issued in accordance with Rule 16b-3": "F",
+    "Bona fide gift": "G",
+    "Expiration (or cancellation) of long derivative position with value received": "H",
+    "Discretionary transaction in accordance with Rule 16b-3(f) "
+    "resulting in acquisition or disposition of issuer securities": "I",
+    "Other acquisition or disposition (describe transaction)": "J",
+    "Small acquisition under Rule 16a-6": "L",
+    "Exercise or conversion of derivative security exempted pursuant to Rule 16b-3": "M",
+    "Exercise of out-of-the-money derivative security": "O",
+    "Open market or private purchase of non-derivative or derivative security": "P",
+    "Open market or private sale of non-derivative or derivative security": "S",
+    "Disposition pursuant to a tender of shares in a change of control transaction": "U",
+    "Acquisition or disposition by will or the laws of descent and distribution": "W",
+    "Exercise of in-the-money or at-the-money derivative security": "X",
+    "Deposit into or withdrawal from voting trust": "Z",
+}
+
+
+def classify_form4_description(description: str | None) -> Form4Class:
+    """Classify the text OpenBB's ``obb.sec.insider_trading`` returns in ``transaction_type``.
+
+    OpenBB replaces the one-letter SEC transaction code with its description, so the letter is recovered by exact
+    lookup of the SEC's own wording (audit: LIVE, AAPL/NVDA). Anything not in the table -> UNKNOWN (never guessed).
+    Nasdaq's insider feed labels pre-arranged plan sales "Automatic Sell"; that is the only Nasdaq label observed.
+    """
+    if not description:
+        return Form4Class.UNKNOWN
+    text = description.strip()
+    if text == "Automatic Sell":
+        return Form4Class.OPEN_MARKET_SELL
+    return classify_form4(_FORM4_DESCRIPTIONS.get(text))
 
 
 def is_market_signal(kind: Form4Class) -> bool:

@@ -103,24 +103,38 @@ def test_free_cash_flow_never_assumes_zero_capex():
 
 
 def test_total_debt_sums_components_and_flags_absent_ones():
-    full = m.total_debt(10, 5, 85, balance_sheet_present=True)
+    full = m.total_debt(10, 5, 85, balance_sheet_present=True, company_type="industrial")
     assert full.value == 100 and full.flags == ()
-    partial = m.total_debt(None, 5, 85, balance_sheet_present=True)
+    partial = m.total_debt(None, 5, 85, balance_sheet_present=True, company_type="industrial")
     assert partial.value == 90 and partial.flags == ("ASSUMED_ZERO:short_term_debt",)
-    assert m.total_debt(10, 5, 85, 7, balance_sheet_present=True).value == 107  # finance leases included
+    assert (
+        m.total_debt(10, 5, 85, 7, balance_sheet_present=True, company_type="industrial").value == 107
+    )  # finance leases included
+
+
+def test_total_debt_absent_lines_are_not_zero_for_non_industrial_or_unknown_filers():
+    """Berkshire-style: a huge balance sheet with no debt lines must not be reported as debt-free."""
+    for company_type in ("diversified", "financial", None):
+        result = m.total_debt(None, None, None, balance_sheet_present=True, company_type=company_type)
+        assert result.state is MISSING and result.reason == "DEBT_LINES_ABSENT_NON_INDUSTRIAL_OR_UNKNOWN_FILER"
+    # all three components present: the type no longer matters
+    assert m.total_debt(1, 2, 3, balance_sheet_present=True, company_type="financial").value == 6
 
 
 def test_total_debt_without_any_debt_line_is_zero_only_with_a_balance_sheet_and_a_flag():
-    debt_free = m.total_debt(None, None, None, balance_sheet_present=True)
+    debt_free = m.total_debt(None, None, None, balance_sheet_present=True, company_type="industrial")
     assert debt_free.ok and debt_free.value == 0 and debt_free.flags == ("NO_DEBT_LINES_REPORTED_ASSUMED_ZERO",)
     assert m.total_debt(None, None, None, balance_sheet_present=False) == MetricResult(
         MISSING, None, "NO_BALANCE_SHEET"
     )
-    assert m.total_debt(-1, None, 5, balance_sheet_present=True).reason == "NEGATIVE_DEBT_COMPONENT"
+    assert (
+        m.total_debt(-1, None, 5, balance_sheet_present=True, company_type="industrial").reason
+        == "NEGATIVE_DEBT_COMPONENT"
+    )
 
 
 def test_net_debt_and_net_cash():
-    debt = m.total_debt(0, 10, 90, balance_sheet_present=True)
+    debt = m.total_debt(0, 10, 90, balance_sheet_present=True, company_type="industrial")
     assert m.net_debt(debt, 30, 20).value == 50
     assert m.net_debt(debt, 150, 0).value == -50  # net cash is negative net debt
     assert m.net_debt(debt, None, 20).reason == "CASH_NOT_REPORTED"
@@ -130,7 +144,7 @@ def test_net_debt_and_net_cash():
 
 
 def test_debt_to_equity_rules():
-    debt = m.total_debt(0, 0, 100, balance_sheet_present=True)
+    debt = m.total_debt(0, 0, 100, balance_sheet_present=True, company_type="industrial")
     assert m.debt_to_equity(debt, 50).value == 2.0
     assert m.debt_to_equity(debt, 0).state is ZERO
     assert m.debt_to_equity(debt, -20) == MetricResult(
@@ -141,8 +155,8 @@ def test_debt_to_equity_rules():
 
 
 def test_leverage_trend_is_a_difference_of_two_defined_ratios():
-    now = m.debt_to_equity(m.total_debt(0, 0, 80, balance_sheet_present=True), 100)
-    before = m.debt_to_equity(m.total_debt(0, 0, 100, balance_sheet_present=True), 100)
+    now = m.debt_to_equity(m.total_debt(0, 0, 80, balance_sheet_present=True, company_type="industrial"), 100)
+    before = m.debt_to_equity(m.total_debt(0, 0, 100, balance_sheet_present=True, company_type="industrial"), 100)
     change = m.margin_change(now, before)  # same level-difference rule
     assert change.value == pytest.approx(-0.2)  # leverage fell: no deterioration
 
@@ -327,3 +341,73 @@ def test_results_are_immutable_and_never_nan():
     with pytest.raises(AttributeError):
         result.value = 5
     assert not math.isnan(result.value)
+
+
+# --- lookback returns (calendar-anchored) -------------------------------------------------------------------------
+def _closes(start: date, n: int, price: float = 100.0, step: float = 1.0):
+    """Weekday-only synthetic closes starting at ``start``; price rises ``step`` per row."""
+    out, d, i = [], start, 0
+    while len(out) < n:
+        if d.weekday() < 5:
+            out.append((d, price + step * i))
+            i += 1
+        d = date.fromordinal(d.toordinal() + 1)
+    return out
+
+
+def test_anchor_date_clamps_month_end_and_crosses_years():
+    assert m.anchor_date(date(2026, 3, 31), months=1) == date(2026, 2, 28)
+    assert m.anchor_date(date(2024, 3, 31), months=1) == date(2024, 2, 29)
+    assert m.anchor_date(date(2026, 1, 15), months=2) == date(2025, 11, 15)
+    assert m.anchor_date(date(2026, 10, 2), years=5) == date(2021, 10, 2)
+    assert m.anchor_date(date(2026, 10, 2), days=7) == date(2026, 9, 25)
+
+
+def test_lookback_return_uses_last_close_on_or_before_anchor():
+    series = [(date(2026, 9, 25), 100.0), (date(2026, 9, 28), 105.0), (date(2026, 10, 2), 110.0)]
+    result = m.lookback_return(series, date(2026, 10, 2), days=7)  # anchor 2026-09-25 (a Friday)
+    assert result.state is MetricState.OK and result.value == pytest.approx(0.10)
+    # anchor falls on a weekend: use the previous trading close, not the next one
+    result = m.lookback_return(series, date(2026, 10, 3), days=7)  # anchor Sat 2026-09-26 -> Fri 09-25
+    assert result.value == pytest.approx(0.10)
+
+
+def test_lookback_return_is_missing_for_recent_ipo_or_gap_not_a_shorter_horizon():
+    ipo = _closes(date(2026, 6, 1), 40)
+    assert m.lookback_return(ipo, date(2026, 7, 24), years=1).reason == "INSUFFICIENT_HISTORY"
+    gappy = [(date(2025, 1, 3), 50.0), (date(2026, 10, 2), 80.0)]
+    assert m.lookback_return(gappy, date(2026, 10, 2), months=6).reason == "BASE_PRICE_STALE"
+    assert m.lookback_return([], date(2026, 10, 2), months=1).state is MetricState.MISSING_INPUT
+
+
+def test_lookback_return_ignores_rows_after_as_of():
+    series = [(date(2026, 8, 28), 100.0), (date(2026, 9, 30), 110.0), (date(2026, 10, 15), 500.0)]
+    assert m.lookback_return(series, date(2026, 9, 30), months=1).value == pytest.approx(0.10)
+
+
+# --- Form 4 descriptions as returned by OpenBB ---------------------------------------------------------------------
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Open market or private sale of non-derivative or derivative security", Form4Class.OPEN_MARKET_SELL),
+        ("Open market or private purchase of non-derivative or derivative security", Form4Class.OPEN_MARKET_BUY),
+        ("Grant, award or other acquisition pursuant to Rule 16b-3(d)", Form4Class.AWARD),
+        (
+            "Exercise or conversion of derivative security exempted pursuant to Rule 16b-3",
+            Form4Class.OPTION_EXERCISE_OR_CONVERSION,
+        ),
+        ("Bona fide gift", Form4Class.GIFT),
+        ("Automatic Sell", Form4Class.OPEN_MARKET_SELL),
+        ("something new the SEC invents", Form4Class.UNKNOWN),
+        (None, Form4Class.UNKNOWN),
+    ],
+)  # fmt: skip
+def test_form4_description_classification(text, expected):
+    assert m.classify_form4_description(text) is expected
+
+
+def test_form4_description_table_matches_installed_openbb_wording():
+    """Every description OpenBB can emit must classify to the same class as its code (guards wording drift)."""
+    insider = pytest.importorskip("openbb_sec.models.insider_trading")
+    for code, description in insider.TRANSACTION_CODE_MAP.items():
+        assert m.classify_form4_description(description) is m.classify_form4(code), code

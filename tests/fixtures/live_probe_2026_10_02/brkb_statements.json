@@ -1,0 +1,45 @@
+{
+ "_probe": "followup.meta.BRK-B + fundamentals sec.balance.BRK-B.annual (run 36954761165)",
+ "company_type": "diversified",
+ "balance_annual": [
+  {
+   "period_ending": "2025-12-31",
+   "cash_and_equivalents": 52569000000.0,
+   "short_term_investments": null,
+   "total_assets": 1222176000000.0,
+   "total_liabilities": 502473000000.0,
+   "short_term_debt": null,
+   "current_portion_of_long_term_debt": null,
+   "long_term_debt": null,
+   "total_equity": 717419000000.0
+  },
+  {
+   "period_ending": "2024-12-31",
+   "cash_and_equivalents": 48376000000.0,
+   "short_term_investments": null,
+   "total_assets": 1153881000000.0,
+   "total_liabilities": 502226000000.0,
+   "short_term_debt": null,
+   "current_portion_of_long_term_debt": null,
+   "long_term_debt": null,
+   "total_equity": 649368000000.0
+  }
+ ],
+ "income_row_nonnull_fields": [
+  "net_income",
+  "net_income_to_common",
+  "operating_revenue",
+  "total_revenue",
+  "total_operating_income",
+  "total_pretax_income"
+ ],
+ "income_row_absent_fields": [
+  "basic_eps",
+  "diluted_eps",
+  "weighted_ave_basic_shares_os",
+  "weighted_ave_diluted_shares_os",
+  "total_gross_profit"
+ ],
+ "_note": "Debt lines absent on a USD 1.2T balance sheet; EPS and share fields absent. total_gross_profit absent is inferred from the non-null field list, not shown directly.",
+ "_recorded": "2026-10-02 (GitHub-hosted runner, UTC ~02:15-02:25)"
+}

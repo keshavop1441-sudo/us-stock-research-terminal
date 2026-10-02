@@ -1,0 +1,19 @@
+{
+ "_probe": "followup.meta.*",
+ "company_type": {
+  "AAPL": "industrial",
+  "GOOGL": "industrial",
+  "NVDA": "industrial",
+  "RIVN": "industrial",
+  "BRK-B": "diversified",
+  "JPM": "financial"
+ },
+ "jpm_distinct_fields": [
+  "net_interest_income",
+  "provision_for_credit_losses",
+  "total_noninterest_income",
+  "total_noninterest_expense",
+  "deposits_interest_expense"
+ ],
+ "_recorded": "2026-10-02 (GitHub-hosted runner, UTC ~02:15-02:25)"
+}

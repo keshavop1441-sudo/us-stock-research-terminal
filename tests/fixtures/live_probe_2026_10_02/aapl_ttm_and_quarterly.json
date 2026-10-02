@@ -1,0 +1,48 @@
+{
+ "_probe": "fundamentals sec.income.AAPL.ttm, sec.cashflow.AAPL.ttm (run 36954761165); followup.cashflow.AAPL.quarterly",
+ "income_ttm": {
+  "period_ending": "2026-06-27",
+  "total_revenue": 466823000000.0,
+  "net_income": 128930000000.0,
+  "diluted_eps": 8.719999999999999,
+  "weighted_ave_diluted_shares_os": 59114516000
+ },
+ "cashflow_ttm": {
+  "period_ending": "2026-06-27",
+  "net_cash_from_operating_activities": 146724000000.0,
+  "purchase_of_plant_property_and_equipment": -10041000000.0
+ },
+ "operating_cash_flow_quarterly": [
+  {
+   "period_ending": "2026-06-27",
+   "fiscal_period": "Q3",
+   "value": 34369000000.0
+  },
+  {
+   "period_ending": "2026-03-28",
+   "fiscal_period": "Q2",
+   "value": 28702000000.0
+  },
+  {
+   "period_ending": "2025-12-27",
+   "fiscal_period": "Q1",
+   "value": 53925000000.0
+  },
+  {
+   "period_ending": "2025-09-27",
+   "fiscal_period": "Q4",
+   "value": 29728000000.0
+  },
+  {
+   "period_ending": "2025-06-28",
+   "fiscal_period": "Q3",
+   "value": 27867000000.0
+  }
+ ],
+ "annual": {
+  "period_ending": "2025-09-27",
+  "net_cash_from_operating_activities": 111482000000.0,
+  "purchase_of_plant_property_and_equipment": -12715000000.0
+ },
+ "_recorded": "2026-10-02 (GitHub-hosted runner, UTC ~02:15-02:25)"
+}
