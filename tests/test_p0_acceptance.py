@@ -99,15 +99,15 @@ def verdict(criteria, *, failures=(), unsupported=(), fatal=None, succeeded=14):
 
 def test_all_pass_and_no_failure_is_accepted_and_opens_the_gate():
     v = verdict([crit(PASS, PASS, cid=f"A{i}") for i in range(1, 14)])
-    assert (v["overall"], v["p1_gate"]) == ("ACCEPTED", "OPEN")
+    assert v["overall"] == "ACCEPTED" and "p1_gate" not in v  # the progression gate is a separate layer
     assert v["pipeline_execution"]["status"] == "COMPLETED" and v["acceptance_criteria"]["status"] == "ACCEPTED"
 
 
 def test_one_partial_criterion_makes_the_whole_report_incomplete_not_accepted():
     v = verdict([crit(PASS, cid="A1"), crit(PASS, DEFERRED, cid="A12")])
-    assert v["overall"] == "INCOMPLETE" and v["p1_gate"] == "CLOSED"
+    assert v["overall"] == "INCOMPLETE"
     assert v["acceptance_criteria"]["not_passed"] == [{"id": "A12", "status": PARTIAL}]
-    assert "A12 is PARTIAL" in v["p1_gate_reasons"]
+    assert "A12 is PARTIAL" in v["acceptance_reasons"]
 
 
 def test_a_failed_criterion_fails_the_report_even_if_everything_else_passed():
@@ -119,7 +119,7 @@ def test_a_genuine_stage_failure_blocks_acceptance_even_when_every_criterion_pas
     failures = [{"stage": "prices", "symbol": "AMD", "kind": "NETWORK", "message": "down"}]
     v = verdict([crit(PASS, cid="A1")], failures=failures, succeeded=13)
     assert v["pipeline_execution"]["status"] == "COMPLETED_WITH_FAILURES" and v["overall"] == "FAILED"
-    assert v["pipeline_execution"]["genuine_failures"] == failures and v["p1_gate"] == "CLOSED"
+    assert v["pipeline_execution"]["genuine_failures"] == failures
 
 
 def test_an_expected_unsupported_issuer_is_listed_apart_from_failures_and_never_hides_an_unmet_criterion():

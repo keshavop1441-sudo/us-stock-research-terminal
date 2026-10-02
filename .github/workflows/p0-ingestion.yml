@@ -21,12 +21,16 @@ jobs:
         with:
           python-version: "3.14"
       - run: python -m pip install --require-hashes -r requirements.lock
+      - name: Automated tests (an input of the P1 progression gate)
+        run: |
+          python -m pip install --require-hashes -r requirements-dev.lock
+          if python -m pytest -q; then echo passed > "$RUNNER_TEMP/tests_status"; else echo failed > "$RUNNER_TEMP/tests_status"; fi
       - name: Run P0 (ingest, validate, ingest again, validate idempotency, report)
         env:
           SEC_USER_AGENT: ${{ vars.SEC_USER_AGENT }}
         run: |
           code=0
-          python scripts/run_p0.py --db "$RUNNER_TEMP/p0_pilot.duckdb" --out-dir p0_report || code=$?
+          python scripts/run_p0.py --db "$RUNNER_TEMP/p0_pilot.duckdb" --out-dir p0_report --tests-status "$(cat "$RUNNER_TEMP/tests_status")" || code=$?
           # 4 = ran cleanly but some acceptance criterion is PARTIAL/DEFERRED/NOT_EVALUABLE: visible, not a job failure
           if [ "$code" = "4" ]; then echo "::warning::P0 is INCOMPLETE (see the report)"; exit 0; fi
           exit $code

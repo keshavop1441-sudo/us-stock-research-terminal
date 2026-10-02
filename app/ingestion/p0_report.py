@@ -16,6 +16,7 @@ from app.ingestion.acceptance import (
     overall_verdict,
 )
 from app.ingestion.manifest import MANIFEST
+from app.ingestion.progression import progression_gate
 from app.ingestion.run_report import RunReport
 from app.screening.snapshot import CORE_LINES, IssuerSnapshot
 
@@ -492,19 +493,37 @@ def not_run_criteria(reason: str) -> list[Criterion]:
 
 
 def verdict(
-    first: RunReport, criteria: list[Criterion], summary: dict, second: RunReport | None = None
+    first: RunReport,
+    criteria: list[Criterion],
+    summary: dict,
+    second: RunReport | None = None,
+    *,
+    integrity: dict[str, int] | None = None,
+    automated_tests: str | None = None,
 ) -> dict[str, object]:
-    return overall_verdict(
+    """Acceptance + pipeline execution (``overall_verdict``) and, separately, the P1 progression gate."""
+    genuine = [{"stage": i.stage, "symbol": i.symbol, "kind": i.kind, "message": i.message} for i in first.issues]
+    result = overall_verdict(
         run_fatal=first.fatal,
-        genuine_failures=[
-            {"stage": i.stage, "symbol": i.symbol, "kind": i.kind, "message": i.message} for i in first.issues
-        ],  # fmt: skip
+        genuine_failures=genuine,
         expected_unsupported=first.expected_unsupported,
         securities_attempted=summary.get("securities_attempted", len(first.symbols)),
         succeeded_all_stages=summary.get("companies_succeeded_all_stages", 0),
         criteria=criteria,
         second_run_failures=None if second is None else len(second.issues),
     )
+    gate = progression_gate(
+        criteria,
+        execution=result["pipeline_execution"]["status"],  # type: ignore[index]
+        genuine_failures=genuine,
+        expected_unsupported=first.expected_unsupported,
+        mode=first.mode,
+        integrity=integrity,
+        automated_tests=automated_tests,
+    )
+    result["progression_gate"] = gate
+    result["p1_gate"] = gate["status"]  # flat alias for scripts; the gate dict above carries the reasons
+    return result
 
 
 __all__ = ["Component", "Criterion", "evaluate", "not_run_criteria", "summarise", "verdict"]
@@ -514,19 +533,58 @@ def _table(rows: list[tuple[str, object]]) -> list[str]:
     return ["| measurement | value |", "|---|---|", *(f"| {k} | {v} |" for k, v in rows)]
 
 
+def gate_lines(verdict: dict) -> list[str]:
+    """The progression-gate section: blockers, deferred items, expected-unsupported coverage, why each PARTIAL does or
+    does not block P1."""
+    gate = verdict["progression_gate"]
+    lines = ["### P1 progression gate", "", f"_{gate['question']}_", ""]
+    cond = gate["conditions"]
+    violations = cond["data_integrity_violations"]
+    lines += [
+        f"* pipeline execution: {cond['pipeline_execution']}; genuine failures: {cond['genuine_failures']}; "
+        f"live run: {cond['live_run']}",
+        f"* data-integrity violations: {violations if violations is not None else 'not reported'}"
+        f"; automated tests: {cond['automated_tests']}",
+        "",
+        "**Blockers**" + ("" if gate["blockers"] else ": none"),
+    ]  # fmt: skip
+    lines += [f"* `{b['source']}`: {b['reason']}" for b in gate["blockers"]]
+    lines += [
+        "",
+        "**Explicitly deferred items (non-blocking by policy)**" + ("" if gate["deferred_items"] else ": none"),
+    ]
+    for d in gate["deferred_items"]:
+        lines.append(
+            f"* `{d['criterion']}.{d['component']}` [{d['status']}] deferred to "
+            f"{d['deferred_to'] or 'hermetic tests'}; "
+            f"live trigger required: {d['live_trigger_required']}; evidence: {', '.join(d['evidence_source'])}. "
+            f"{d['reason']}"
+        )
+    lines += ["", "**Expected unsupported coverage**" + ("" if gate["expected_unsupported"] else ": none")]
+    lines += [
+        f"* {e['symbol']} (CIK {e['cik']}): {e['kind']} {e.get('taxonomy') or ''} - not a failure"
+        for e in gate["expected_unsupported"]
+    ]
+    lines += ["", "**Criteria that are not PASS, and whether each blocks P1**"]
+    lines += [f"* `{c['id']}` {c['status']} - {c['reason']}" for c in gate["partial_criteria"]]
+    return lines + [""]
+
+
 def _verdict_lines(verdict: dict) -> list[str]:
     ex, acc = verdict["pipeline_execution"], verdict["acceptance_criteria"]
     lines = [
         "## Verdict", "",
-        f"* **Overall: {verdict['overall']}** (P1 gate: {verdict['p1_gate']})",
-        f"* **Pipeline execution: {ex['status']}** - {ex['succeeded_all_stages']}/{ex['securities_attempted']} "
+        f"* **OVERALL P0 ACCEPTANCE: {verdict['overall']}** (criteria: {acc['status']} - {acc['counts']})",
+        f"* **PIPELINE EXECUTION: {ex['status']}** - {ex['succeeded_all_stages']}/{ex['securities_attempted']} "
         f"securities succeeded in every stage; {len(ex['expected_unsupported'])} expected-unsupported; "
         f"{len(ex['genuine_failures'])} genuine failure(s)",
-        f"* **Acceptance criteria: {acc['status']}** - {acc['counts']}",
+        f"* **P1 PROGRESSION GATE: {verdict['p1_gate']}**",
     ]  # fmt: skip
-    for reason in verdict["p1_gate_reasons"]:
-        lines.append(f"  * {reason}")
-    lines += ["", "### Known coverage limitations (not failures)", ""]
+    for reason in verdict["acceptance_reasons"]:
+        lines.append(f"  * acceptance: {reason}")
+    lines.append("")
+    lines += gate_lines(verdict)
+    lines += ["### Known coverage limitations (not failures)", ""]
     lines += [f"* `{x['id']}` ({x['affects']}): {x['text']}" for x in verdict["known_coverage_limitations"]]
     return lines + [""]
 

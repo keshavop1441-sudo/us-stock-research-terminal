@@ -10,6 +10,9 @@ P1/P2.
 start, no request is made, and the report says so: no placeholder contact is ever substituted. The pilot database is a
 separate file so it can be discarded; raw provider payloads are kept beside it for audit.
 
+The P1 progression gate (app/ingestion/progression.py) is reported separately from the acceptance status and does not
+change the exit code; re-decide it from a stored report with scripts/p1_gate.py.
+
 Exit codes: 0 overall ACCEPTED, 1 FAILED (a genuine failure or a failed criterion), 2 database busy, 3 SEC_USER_AGENT
 missing/invalid, 4 INCOMPLETE (ran cleanly, but some criterion is PARTIAL / DEFERRED / NOT_EVALUABLE).
 """
@@ -44,6 +47,11 @@ def main(argv: list[str] | None = None) -> int:
         "--as-of", type=lambda s: datetime.strptime(s, "%Y-%m-%d").date(), default=datetime.now(UTC).date()
     )
     parser.add_argument("--once", action="store_true", help="skip the second (idempotency) run")
+    parser.add_argument(
+        "--tests-status", choices=("passed", "failed"),
+        help="result of `python -m pytest` for this commit; an input of the P1 progression gate "
+             "(omitted = not reported = the gate stays CLOSED)",
+    )  # fmt: skip
     args = parser.parse_args(argv)
 
     try:
@@ -64,7 +72,10 @@ def main(argv: list[str] | None = None) -> int:
             market=MarketData(get_obb, stats), stats=stats, raw_dir=args.db.parent / "p0_raw",
         )  # fmt: skip
 
-    report = run_p0_sequence(args.db, make_run, second_run=not args.once)
+    report = run_p0_sequence(
+        args.db, make_run, second_run=not args.once,
+        automated_tests=args.tests_status.upper() if args.tests_status else None,
+    )  # fmt: skip
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     write_json(args.out_dir / f"p0_report_{stamp}.json", report)
     md_path = args.out_dir / f"p0_report_{stamp}.md"
@@ -72,8 +83,12 @@ def main(argv: list[str] | None = None) -> int:
     md_path.write_text(render_markdown(report), encoding="utf-8")
     print(f"Report: {md_path}")
     verdict = report["verdict"]  # type: ignore[index]
-    print(f"Overall: {verdict['overall']} | pipeline: {verdict['pipeline_execution']['status']} | "
-          f"criteria: {verdict['acceptance_criteria']['counts']} | P1 gate: {verdict['p1_gate']}")  # fmt: skip
+    print(f"OVERALL P0 ACCEPTANCE: {verdict['overall']} | "
+          f"PIPELINE EXECUTION: {verdict['pipeline_execution']['status']} | "
+          f"P1 PROGRESSION GATE: {verdict['p1_gate']} | "
+          f"criteria: {verdict['acceptance_criteria']['counts']}")  # fmt: skip
+    for b in verdict["progression_gate"]["blockers"]:
+        print(f"  P1 blocker {b['source']}: {b['reason']}")
     for item in verdict["acceptance_criteria"]["not_passed"]:
         print(f"  not PASS: {item['id']} = {item['status']}")
     for w in report.get("warnings", []):  # type: ignore[attr-defined]

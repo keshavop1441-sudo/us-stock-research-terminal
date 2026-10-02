@@ -385,11 +385,14 @@ def _snapshot_dict(snapshots) -> dict[str, object]:
     }
 
 
-def run_p0_sequence(db_path: Path, make_run: Callable[[str], P0Run], *, second_run: bool = True) -> dict[str, object]:
+def run_p0_sequence(
+    db_path: Path, make_run: Callable[[str], P0Run], *, second_run: bool = True, automated_tests: str | None = None
+) -> dict[str, object]:
     """Run P0 once, validate, optionally run the identical ingestion again and validate idempotency; return the report.
 
     ``make_run(run_id)`` builds a fresh ``P0Run`` (fresh clients and request counters) for each execution, so a re-run
-    is exactly the same configuration, not a continuation.
+    is exactly the same configuration, not a continuation. ``automated_tests`` ("PASSED" / "FAILED" / None = not
+    reported) is an input of the P1 progression gate, which this function cannot measure itself.
     """
     from app.ingestion import p0_report as pr
     from app.services import p0_metrics_service as ms
@@ -403,7 +406,7 @@ def run_p0_sequence(db_path: Path, make_run: Callable[[str], P0Run], *, second_r
         report["summary"] = {**_empty_summary(first), "fatal": first.fatal}
         criteria = pr.not_run_criteria(f"the run did not proceed ({first.fatal})")
         report["acceptance"] = [c.to_dict() for c in criteria]
-        report["verdict"] = pr.verdict(first, criteria, report["summary"])  # type: ignore[arg-type]
+        report["verdict"] = pr.verdict(first, criteria, report["summary"], automated_tests=automated_tests)  # type: ignore[arg-type]
         report["issues"] = [i.__dict__ for i in first.issues]
         report["warnings"] = first.warnings
         return report
@@ -418,7 +421,9 @@ def run_p0_sequence(db_path: Path, make_run: Callable[[str], P0Run], *, second_r
     report["summary"] = pr.summarise(first, validation1, snapshots1, coverage1)
     criteria = pr.evaluate(first, validation1, snapshots1, coverage1, second=second, second_validation=validation2)
     report["acceptance"] = [c.to_dict() for c in criteria]
-    report["verdict"] = pr.verdict(first, criteria, report["summary"], second)  # type: ignore[arg-type]
+    report["verdict"] = pr.verdict(  # type: ignore[arg-type]
+        first, criteria, report["summary"], second, integrity=validation1["integrity"], automated_tests=automated_tests
+    )
     report["issues"] = [i.__dict__ for i in first.issues]
     report["warnings"] = first.warnings
     report["expected_unsupported"] = first.expected_unsupported
