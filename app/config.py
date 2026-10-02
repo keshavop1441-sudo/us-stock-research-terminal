@@ -18,6 +18,7 @@ _ENV_VARS = {
     "fast_think": "FAST_THINK",
     "deep_think": "DEEP_THINK",
     "database_path": "DATABASE_PATH",
+    "sec_user_agent": "SEC_USER_AGENT",
 }
 
 
@@ -35,6 +36,20 @@ class Settings(BaseModel):
     fast_think: bool = False
     deep_think: bool = True
     database_path: Path = DEFAULT_DATABASE_PATH
+    # SEC fair-access policy: requests must identify the caller. Never hard-coded: the operator supplies it.
+    # Format: "<ApplicationName> <contact>", e.g. "MyResearchTerminal operator@example.org" (contact = email or URL).
+    sec_user_agent: str | None = None
+
+    @field_validator("sec_user_agent")
+    @classmethod
+    def _check_sec_user_agent(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        value = " ".join(value.split())
+        name, _, contact = value.partition(" ")
+        if not name or not contact or not ("@" in contact or contact.startswith(("http://", "https://"))):
+            raise ValueError("SEC_USER_AGENT must be '<ApplicationName> <contact email or URL>'")
+        return value
 
     @field_validator("ollama_base_url")
     @classmethod

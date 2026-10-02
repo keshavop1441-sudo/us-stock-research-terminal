@@ -150,7 +150,7 @@ def test_every_required_data_domain_is_covered():
     }  # fmt: skip
     required = {
         "issuer_cik", "ticker_history", "share_class", "price_daily_ohlcv", "week52_high_low", "price_return",
-        "market_cap_issuer", "shares_outstanding", "revenue", "free_cash_flow", "net_debt", "debt_to_equity",
+        "issuer_market_cap", "shares_outstanding", "revenue", "free_cash_flow", "net_debt", "debt_to_equity",
         "revenue_growth_yoy", "eps_growth_yoy", "price_to_earnings", "filing_index", "amended_filing_flag",
         "insider_transactions", "insider_transaction_class", "institutional_holders_nasdaq",
         "institutional_13f_holdings_sec", "earnings_calendar", "guidance", "company_news", "government_awards",
@@ -214,3 +214,82 @@ def test_no_secrets_or_personal_email_in_the_coverage_files():
 @pytest.mark.parametrize("name", ["data_coverage.yaml", "data_coverage.md"])
 def test_docs_exist(name):
     assert (ROOT / "docs" / name).stat().st_size > 1000
+
+
+def test_price_semantics_are_stated_and_price_returns_are_never_called_total_return():
+    semantics = DATA["price_semantics"]
+    assert {
+        "close_is_split_adjusted",
+        "close_includes_dividends",
+        "returns_are",
+        "total_return",
+        "drawdown_definition",
+    } <= set(semantics)
+    assert BY_ID["total_return"]["status"] == "UNAVAILABLE"
+    for name, metric in BY_ID.items():
+        if name != "total_return" and "return" in name:
+            assert "total return" not in metric["canonical_definition"].lower().replace("not total return", ""), name
+    assert "PRICE" in BY_ID["price_return"]["canonical_definition"]
+    assert {"drawdown_from_52w_high", "drawdown_from_52w_closing_high"} <= set(BY_ID)
+
+
+def test_market_cap_definitions_distinguish_issuer_and_security_level():
+    assert BY_ID["issuer_market_cap"]["status"] == "DERIVED"
+    assert BY_ID["security_market_cap"]["status"] == "UNAVAILABLE"
+    assert "issuer_market_cap" in BY_ID["price_to_sales"]["inputs"]
+    assert "quoted_market_cap_per_listing" in BY_ID["issuer_market_cap"]["inputs"]
+
+
+def test_sec_provenance_preserves_every_required_field_and_names_the_one_gap():
+    fields = DATA["sec_provenance"]["fields_preserved"]
+    required = {
+        "cik", "taxonomy", "tag_concept", "unit", "value", "start", "end", "instant", "filed", "form", "fy", "fp",
+        "frame", "accn", "source_reference",
+    }  # fmt: skip
+    assert required <= set(fields)
+    gaps = {name for name, f in fields.items() if f["record_field"].startswith("NONE")}
+    assert gaps == {"frame"}  # the only field the schema cannot hold yet, and it is tracked as G7
+    assert "G7_fact_frame" in {g["id"] for g in DATA["schema_gaps"]}
+    assert "raw" in DATA["sec_provenance"]["decision"].lower() and "OpenBB" in DATA["sec_provenance"]["decision"]
+
+
+def test_universe_pilot_is_staged_measured_and_gated():
+    pilot = DATA["universe_pilot"]
+    stages = {s["id"]: s for s in pilot["stages"]}
+    assert list(stages) == ["P0_dry_run", "P1_pilot", "P2_scale_gate", "P3_full"]
+    assert "100-500" in stages["P1_pilot"]["size"]
+    measured = {m["id"] for m in pilot["measurements"]}
+    gated = {a["metric"] for a in pilot["acceptance_criteria"]}
+    assert len(measured) == 12 and all(
+        m.startswith(f"M{i}_") for i, m in enumerate(sorted(measured, key=lambda x: int(x[1:].split("_")[0])), 1)
+    )
+    assert gated <= measured and len(pilot["acceptance_criteria"]) >= 12
+    for criterion in pilot["acceptance_criteria"]:
+        assert re.search(r"\d", criterion["threshold"]), f"{criterion['id']} must state a numeric threshold"
+    wanted = ("identity", "CIK mapping", "price", "SEC fact", "missing-data", "duplicate", "request volume",
+              "request failures", "provider warnings", "ingestion time", "upsert")  # fmt: skip
+    text = " ".join(m["measure"] for m in pilot["measurements"]).lower()
+    assert all(w.lower() in text for w in wanted)
+    assert "exchanges" in " ".join(pilot["selection"]["strata"]).lower()
+    assert "Phase 2" in pilot["principle"] and pilot["not_in_phase_2"] is True
+
+
+def test_classification_decision_keeps_taxonomies_separate_and_does_not_require_gics():
+    block = DATA["classification"]
+    assert set(block["systems_in_use"]) == {"nasdaq", "sec_sic", "gics"}
+    assert block["systems_in_use"]["gics"].startswith("NOT USED")
+    assert "Never convert" in block["decision"]
+    queries = {q["query"]: q for q in block["query_interpretation"]}
+    assert "Nasdaq taxonomy" in queries["Technology stocks excluding semiconductors"]["interpreted_as"]
+    assert BY_ID["nasdaq_sector_industry"]["status"] == "LIVE_VERIFIED"
+    assert BY_ID["sic_code_and_description"]["status"] == "LIVE_VERIFIED"
+    assert BY_ID["normalized_classification"]["status"] == "UNAVAILABLE"
+
+
+def test_debt_rule_never_infers_zero_from_absence():
+    debt = BY_ID["total_debt"]
+    text = (debt["formula"] + debt["missing_data_behavior"]).lower()
+    assert "never zero because a line is absent" in text and "company_type" not in text
+    assert "company_type" not in debt["inputs"]
+    assert "industrial" not in (debt["formula"] + debt["missing_data_behavior"])
+    assert "absent debt lines count as zero" not in json.dumps(DATA["comparability_rules"])

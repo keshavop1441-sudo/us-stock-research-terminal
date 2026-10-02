@@ -102,39 +102,65 @@ def test_free_cash_flow_never_assumes_zero_capex():
 # --- debt, net debt, leverage -----------------------------------------------------------------------------------------
 
 
-def test_total_debt_sums_components_and_flags_absent_ones():
-    full = m.total_debt(10, 5, 85, balance_sheet_present=True, company_type="industrial")
-    assert full.value == 100 and full.flags == ()
-    partial = m.total_debt(None, 5, 85, balance_sheet_present=True, company_type="industrial")
-    assert partial.value == 90 and partial.flags == ("ASSUMED_ZERO:short_term_debt",)
-    assert (
-        m.total_debt(10, 5, 85, 7, balance_sheet_present=True, company_type="industrial").value == 107
-    )  # finance leases included
+def test_total_debt_sums_explicitly_reported_components():
+    full = m.total_debt(10, 5, 85, 7, balance_sheet_present=True)
+    assert full.value == 107 and full.flags == ()  # finance leases included when reported
+    no_leases = m.total_debt(10, 5, 85, balance_sheet_present=True)
+    assert no_leases.value == 100 and no_leases.flags == ("FINANCE_LEASES_NOT_REPORTED",)
 
 
-def test_total_debt_absent_lines_are_not_zero_for_non_industrial_or_unknown_filers():
-    """Berkshire-style: a huge balance sheet with no debt lines must not be reported as debt-free."""
-    for company_type in ("diversified", "financial", None):
-        result = m.total_debt(None, None, None, balance_sheet_present=True, company_type=company_type)
-        assert result.state is MISSING and result.reason == "DEBT_LINES_ABSENT_NON_INDUSTRIAL_OR_UNKNOWN_FILER"
-    # all three components present: the type no longer matters
-    assert m.total_debt(1, 2, 3, balance_sheet_present=True, company_type="financial").value == 6
+def test_an_explicitly_reported_zero_is_a_value():
+    zero = m.total_debt(0, 0, 0, 0, balance_sheet_present=True)
+    assert zero.ok and zero.value == 0 and zero.flags == ()
+    assert m.total_debt(0, 0, 100, balance_sheet_present=True).value == 100
 
 
-def test_total_debt_without_any_debt_line_is_zero_only_with_a_balance_sheet_and_a_flag():
-    debt_free = m.total_debt(None, None, None, balance_sheet_present=True, company_type="industrial")
-    assert debt_free.ok and debt_free.value == 0 and debt_free.flags == ("NO_DEBT_LINES_REPORTED_ASSUMED_ZERO",)
+@pytest.mark.parametrize(
+    "components",
+    [
+        (None, None, None),  # Berkshire-style: nothing reported
+        (None, 5, 85),  # short-term debt line absent
+        (10, None, 85),
+        (10, 5, None),  # long-term debt line absent
+        (0, None, 0),  # zeros elsewhere do not vouch for the missing line
+    ],
+)
+def test_an_absent_debt_line_is_never_zero(components):
+    result = m.total_debt(*components, balance_sheet_present=True)
+    assert result.state is MISSING and result.value is None
+    assert result.reason.startswith("DEBT_COMPONENT_ABSENT:")
+    # downstream metrics inherit the unknown instead of computing from a lower bound
+    assert m.net_debt(result, 30, 20).state is MISSING
+    assert m.debt_to_equity(result, 50).state is MISSING
+
+
+def test_absent_debt_is_missing_whatever_else_is_known_about_the_filer():
+    """No company-type shortcut exists: the signature has no such parameter, so it cannot be smuggled back in."""
+    with pytest.raises(TypeError):
+        m.total_debt(None, None, None, balance_sheet_present=True, **{"company_type": "industrial"})
+    assert m.total_debt(None, None, None, balance_sheet_present=True).state is MISSING
+
+
+def test_explicit_filing_evidence_of_no_debt_is_zero_and_flagged():
+    result = m.total_debt(None, None, None, balance_sheet_present=True, explicit_no_debt_evidence=True)
+    assert result.ok and result.value == 0 and result.flags == ("EXPLICIT_NO_DEBT_EVIDENCE",)
+    assert m.net_debt(result, 30, 20).value == -50
+    # evidence that contradicts a reported positive component is not trusted either way
+    contradictory = m.total_debt(None, None, 5, balance_sheet_present=True, explicit_no_debt_evidence=True)
+    assert contradictory.state is NOT_MEANINGFUL and contradictory.reason == "CONTRADICTORY_NO_DEBT_EVIDENCE"
+    # explicit evidence still needs a balance sheet
+    assert m.total_debt(None, None, None, balance_sheet_present=False, explicit_no_debt_evidence=True).state is MISSING
+
+
+def test_total_debt_other_guards():
     assert m.total_debt(None, None, None, balance_sheet_present=False) == MetricResult(
         MISSING, None, "NO_BALANCE_SHEET"
     )
-    assert (
-        m.total_debt(-1, None, 5, balance_sheet_present=True, company_type="industrial").reason
-        == "NEGATIVE_DEBT_COMPONENT"
-    )
+    assert m.total_debt(-1, 0, 5, balance_sheet_present=True).reason == "NEGATIVE_DEBT_COMPONENT"
 
 
 def test_net_debt_and_net_cash():
-    debt = m.total_debt(0, 10, 90, balance_sheet_present=True, company_type="industrial")
+    debt = m.total_debt(0, 10, 90, balance_sheet_present=True)
     assert m.net_debt(debt, 30, 20).value == 50
     assert m.net_debt(debt, 150, 0).value == -50  # net cash is negative net debt
     assert m.net_debt(debt, None, 20).reason == "CASH_NOT_REPORTED"
@@ -144,7 +170,7 @@ def test_net_debt_and_net_cash():
 
 
 def test_debt_to_equity_rules():
-    debt = m.total_debt(0, 0, 100, balance_sheet_present=True, company_type="industrial")
+    debt = m.total_debt(0, 0, 100, balance_sheet_present=True)
     assert m.debt_to_equity(debt, 50).value == 2.0
     assert m.debt_to_equity(debt, 0).state is ZERO
     assert m.debt_to_equity(debt, -20) == MetricResult(
@@ -155,8 +181,8 @@ def test_debt_to_equity_rules():
 
 
 def test_leverage_trend_is_a_difference_of_two_defined_ratios():
-    now = m.debt_to_equity(m.total_debt(0, 0, 80, balance_sheet_present=True, company_type="industrial"), 100)
-    before = m.debt_to_equity(m.total_debt(0, 0, 100, balance_sheet_present=True, company_type="industrial"), 100)
+    now = m.debt_to_equity(m.total_debt(0, 0, 80, balance_sheet_present=True), 100)
+    before = m.debt_to_equity(m.total_debt(0, 0, 100, balance_sheet_present=True), 100)
     change = m.margin_change(now, before)  # same level-difference rule
     assert change.value == pytest.approx(-0.2)  # leverage fell: no deterioration
 
@@ -411,3 +437,21 @@ def test_form4_description_table_matches_installed_openbb_wording():
     insider = pytest.importorskip("openbb_sec.models.insider_trading")
     for code, description in insider.TRANSACTION_CODE_MAP.items():
         assert m.classify_form4_description(description) is m.classify_form4(code), code
+
+
+# --- price semantics ------------------------------------------------------------------------------------------------
+def test_returns_are_price_returns_and_say_so():
+    series = [(date(2026, 8, 28), 100.0), (date(2026, 9, 30), 110.0)]
+    result = m.lookback_return(series, date(2026, 9, 30), months=1)
+    assert result.value == pytest.approx(0.10) and "PRICE_RETURN_EXCLUDES_DIVIDENDS" in result.flags
+    assert m.price_return(110, 100).flags == ("PRICE_RETURN_EXCLUDES_DIVIDENDS",)
+
+
+def test_drawdown_intraday_and_closing_high_are_different_numbers():
+    rows = [(date(2026, 9, d), 110.0 if d == 10 else 100.0, 90.0, 105.0 if d == 10 else 100.0) for d in range(1, 25)]
+    window = m.high_low_52w(rows, date(2026, 9, 24), minimum_days=5, full_window_days=5)
+    close = 100.0
+    intraday = m.drawdown_from_high(close, window["high_52w"].value)
+    closing = m.drawdown_from_high(close, window["high_52w_close"].value)
+    assert intraday.value == pytest.approx(100 / 110 - 1) and closing.value == pytest.approx(100 / 105 - 1)
+    assert intraday.value < closing.value < 0

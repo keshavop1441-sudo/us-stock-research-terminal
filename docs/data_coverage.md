@@ -57,15 +57,16 @@ transactions); Google News RSS and Yahoo Finance RSS.
 3. **`net_income` is not net income to common.** RIVN FY2025: `net_income` -3,626M (ProfitLoss, includes non-controlling interests)
    vs `net_income_to_common` -3,646M (NetIncomeLoss). The dictionary uses `net_income_to_common` for margins, EPS and P/E.
 4. **TTM share counts are invalid.** AAPL TTM `weighted_ave_diluted_shares_os` is 59.1B (a four-quarter sum) against 14.6B outstanding.
-5. **Absent is not zero.** Berkshire (`company_type` "diversified") shows no debt lines and no EPS on a USD 1.2T balance sheet. Assumed-zero
-   debt applies only to `industrial` filers with a balance sheet (flagged); otherwise `MISSING_INPUT`.
-6. **Multi-class issuers.** Nasdaq's per-quote `market_cap` is that class's price x ALL shares (GOOGL 4.137T, GOOG 4.096T). Summing
-   listings double counts; the issuer value comes from one primary class. SEC `dei` shares-outstanding is absent for GOOGL and META
+5. **Absent is not zero.** Berkshire shows no debt lines and no EPS on a USD 1.2T balance sheet. Debt is 0 only when every core line is explicitly
+   reported (0 is a value) or the filing explicitly evidences no debt; an absent line is always `MISSING_INPUT`. No filer-type shortcut exists.
+6. **Market cap semantics.** Nasdaq's per-quote `market_cap` is that listing's price x ALL issuer shares (GOOGL 4.137T, GOOG 4.096T): not a
+   security-specific cap. The system's canonical definition is `issuer_market_cap` (one value per CIK from the designated primary listing); a
+   `security_market_cap` is UNAVAILABLE and not invented. Summing listings double counts. SEC `dei` shares-outstanding is absent for GOOGL and META
    and stale for BRK-B (2011), so shares for multi-class issuers need another route (implied from market cap / price).
 7. **Ticker spelling differs by provider.** SEC `BRK-B`; Nasdaq and Cboe `BRK.B` (`BRK/B` on Nasdaq and `BRK-B` on Cboe quote fail). CIK is
    the identity; `app/models/symbols.py` converts.
-8. **Prices are split-adjusted, not dividend-adjusted** (Cboe and Nasdaq identical on shared dates), so a split re-bases the whole history
-   and `adj_close` must stay NULL. Cboe history reaches 2004; Nasdaq only about 10 years and rejects narrow windows.
+8. **Prices are split-adjusted and, as measured, not dividend-adjusted** (Cboe and Nasdaq identical on shared dates; not checked against exchange
+   raw prints), so a split re-bases the whole history and `adj_close` must stay NULL. Returns are PRICE returns, never total returns (section 12). Cboe history reaches 2004; Nasdaq only about 10 years and rejects narrow windows.
 9. **52-week high/low = intraday max/min over 365 days** (matches Nasdaq's published figure exactly for AAPL, NVDA, MSFT); it is computed, never stored.
 10. **Insider data:** OpenBB returns the SEC's description text, not the code letter, and never fills `transaction_value`. Of 24 AAPL rows, only 8 were
     open-market sales (13 awards, 2 exercises, 1 tax withholding). 10b5-1 is not exposed.
@@ -74,7 +75,7 @@ transactions); Google News RSS and Yahoo Finance RSS.
 12. **Amendments:** OpenBB's `form_type` rejects `10-K/A`/`10-Q/A`; amended filings (AMD 10-K/A 2026-02-04, TSLA, old Google CIK) are found by a client-side filter on `report_type`.
 13. **Ticker history is UNAVAILABLE** from every installed provider (only `formerNames` for names). Discontinued issuers (TWTR, ATVI) resolve by CIK with no ticker and no prices.
 14. **USAspending cannot be matched to issuers by identifier** (no ticker/CIK; parent and child recipients with different UEIs).
-15. **SEC requires a contact in the User-Agent.** A generic UA got HTTP 403; OpenBB's shipped placeholder worked. Production needs a real contact set by the operator.
+15. **SEC requires a contact in the User-Agent.** A generic UA got HTTP 403; OpenBB's shipped placeholder worked. The operator supplies the real one through the `SEC_USER_AGENT` environment variable (format in section 12); nothing personal is stored in the repository.
 
 ## 4. Recommended source and fallback per dataset
 
@@ -106,8 +107,8 @@ universe-scale behaviour is **NOT_VERIFIED**. Form 4 retrieval is one download p
 
 ## 6. Metric dictionary and comparability rules
 
-The dictionary is the YAML `metrics` list (72 entries: 41 LIVE_VERIFIED, 23 DERIVED, 2 API_SHAPE_VERIFIED, 1 FIXTURE_VERIFIED, 3 NOT_VERIFIED,
-2 UNAVAILABLE) plus the executable rules in `app/screening/metrics.py`. Every derived metric returns `OK`, `MISSING_INPUT`,
+The dictionary is the YAML `metrics` list (76 entries: 41 LIVE_VERIFIED, 24 DERIVED, 2 API_SHAPE_VERIFIED, 1 FIXTURE_VERIFIED, 3 NOT_VERIFIED,
+5 UNAVAILABLE) plus the executable rules in `app/screening/metrics.py`. Every derived metric returns `OK`, `MISSING_INPUT`,
 `ZERO_DENOMINATOR`, `NOT_MEANINGFUL` or `NOT_COMPARABLE`; a screen treats anything but `OK` as "cannot be evaluated" and never as 0.
 
 Comparability rules (YAML `comparability_rules`, C1 to C12): same period kind; periods about one year apart (a fiscal-year change is
@@ -127,7 +128,7 @@ window), `provider_version`, and the provider's own `as_of` timestamp. These are
 
 ## 8. Not verified / unavailable
 
-* `UNAVAILABLE`: guidance, ticker history, GICS, delisting dates, structured share-class attribute.
+* `UNAVAILABLE`: guidance, ticker history, security-level market cap, total return, a project-normalised classification, delisting dates, a structured share-class attribute. GICS is simply not used (section 12).
 * `NOT_VERIFIED`: sector-relative return (ETF mapping undefined), EBITDA (D&A definition unchecked), splits/dividend calendars
   (Nasdaq splits calendar returned zero rows for June 2024), universe-scale rate limits, the NYSE/other-listed symbol directory,
   preferred/unit/warrant ticker conventions, non-USD reporters, insurers/REITs/utilities statement templates.
@@ -138,11 +139,11 @@ window), `provider_version`, and the provider's own `as_of` timestamp. These are
 
 Schema (see YAML `source_evidence_model` and `schema_gaps`): add `sources.command`, `sources.parameters`, `sources.provider_version`,
 `sources.as_of`; require `source_id` on ingested rows in the service layer; extend `ownership` with price, post-transaction shares,
-acquired/disposed, derivative flag, security title, ownership nature, 10b5-1; keep `price_daily.adj_close` NULL; decide how share class and
+acquired/disposed, derivative flag, security title, ownership nature, 10b5-1; add nullable `financial_facts.frame` (G7); keep `price_daily.adj_close` NULL; record the provider of `securities.sector/industry/sic` (G6); decide how share class and
 ticker history are stored; defer an awards table and issuer-alias table until contracts are in scope.
 
 Metric definitions changed by this audit (already applied in code and tests): `net_income` means attributable to parent; per-share growth requires the same filing;
-`total_debt` assumed-zero applies only to `industrial`; TTM share counts are rejected; market cap is per issuer; returns are calendar-anchored and `MISSING_INPUT` when history is
+`total_debt` is never inferred zero from an absent line (explicit zero or explicit filing evidence only); TTM share counts are rejected; market cap is `issuer_market_cap` (one value per CIK); returns are calendar-anchored and `MISSING_INPUT` when history is
 short; ownership aggregation requires one report period.
 
 ## 10. Re-running the audit
@@ -150,6 +151,45 @@ short; ownership aggregation requires one report period.
 Trigger the **Provider probe** workflow (manual `workflow_dispatch`, or any PR touching the probe). Optional repository variable
 `SEC_USER_AGENT` (your name and a contact address) identifies the caller to the SEC. Output is one `PROBE {json}` line per probe in the job log.
 After editing the YAML run `python tests/render_coverage.py`.
+
+## 12. Corrections made before Phase 3
+
+**Debt.** Absence never means zero. `total_debt` is 0 only when every core line (short-term debt, current portion of long-term debt, long-term debt) is
+explicitly reported (a reported 0 is a value) or the filing explicitly evidences no debt; any absent core line gives `MISSING_INPUT`
+(`DEBT_COMPONENT_ABSENT:<names>`), and net debt and debt/equity inherit it. The earlier company-type shortcut was removed. Finance leases are optional and
+flagged when not reported. (Net debt treats an absent short-term-investments line as zero with a flag, which can only overstate net debt.)
+
+**Sector / industry taxonomy.** Nasdaq's sector/industry and SEC SIC are different systems; GICS is not used and not required. Raw source classification is
+preserved with its source system; there is no SIC-to-Nasdaq or Nasdaq-to-GICS conversion (`app/screening/classification.py`; applying a filter to the wrong
+system raises). Live results (run 36957138239): NVDA, AMD, AVGO, INTC, MU, TXN and TSM are Nasdaq Technology / "Semiconductors" and SIC 3674; AAPL is
+Computer Manufacturing / 3571; MSFT Computer Software: Prepackaged Software / 7372; META and GOOGL Computer Software: Programming Data Processing / 7370
+(Nasdaq calls them Technology, GICS would not); AMZN Consumer Discretionary / Catalog/Specialty Distribution / 5961; QCOM Technology / "Radio And Television
+Broadcasting And Communications Equipment" / 3663 and ASML Technology / "Industrial Machinery/Components" / 3559, so neither is a "semiconductor" in either source.
+"Technology stocks excluding semiconductors" is a Nasdaq-taxonomy query: sector = "Technology" AND industry != "Semiconductors" (exact strings), and the
+answer is stated as such. A project grouping, if ever needed, is an explicit versioned mapping table stored beside the untouched raw values.
+
+**Market cap.** Nasdaq/OpenBB returns, per quoted listing, that listing's price x ALL issuer shares (GOOGL 4.137T and GOOG 4.096T imply one share count). It is
+neither a security-specific cap nor a single issuer figure. Canonical definition: `issuer_market_cap`, one value per CIK from the designated primary listing, used for
+all issuer-level valuation (P/S) against issuer revenue, so GOOG and GOOGL are screened on the same number. Why: the numerators and denominators of the valuation
+metrics are issuer facts keyed by CIK, and a per-class cap cannot be computed from the data. `security_market_cap` is UNAVAILABLE and is not invented.
+
+**Price semantics.** `close` is split-adjusted and not dividend-adjusted (measured by Cboe/Nasdaq agreement); returns are labelled price returns and carry
+`PRICE_RETURN_EXCLUDES_DIVIDENDS`; total return is UNAVAILABLE. Drawdown from the 52-week high is `close / intraday 52-week high - 1` (Nasdaq's convention);
+`drawdown_from_52w_closing_high` is a separate named metric. Full list in the YAML `price_semantics`.
+
+**SEC provenance.** Raw `companyfacts` / `submissions` are the canonical provenance layer for accounting facts; OpenBB statements are a convenience view and
+cross-check. Preserved per fact: cik, taxonomy, concept, unit, value, start/instant, end, filed, form, fiscal year and period, frame, accession, and a deterministic
+source reference. Only `frame` has no database column yet (gap G7). `app/models/sec_facts.py`, `tests/test_sec_provenance.py`.
+
+**SEC User-Agent.** Environment variable `SEC_USER_AGENT`, format `<ApplicationName> <contact email or URL>` (an application or organisation name, a space, then a
+contact), validated by `Settings`; empty means unset and no default contact exists. See README.
+
+**Universe pilot** (YAML `universe_pilot`). Stages P0 dry run (5-10 symbols), P1 pilot of about 300 (100-500) stratified securities in a separate database file,
+P2 about 2,000, then full. Strata cover Nasdaq/NYSE/NYSE American, all market-cap buckets and sectors, multi-class issuers, non-calendar and loss-making companies,
+recent IPOs, financials, ADRs, discontinued CIKs. Twelve measurements (identity, CIK mapping, price, SEC facts, missing data, duplicates, request volume, failures,
+provider warnings, time, upsert behaviour, cross-source agreement) and thirteen numeric acceptance criteria, for example: identity >= 99%; 0 duplicate
+logical keys after load and after a re-run; second identical run inserts 0 rows; SEC <= 9 requests/second with 0 403/429; failures <= 1%; core fields missing <= 5%
+for industrial filers; 0 zero-debt values without evidence; 100% of rows with provenance. Any failure stops scaling and the whole pilot is re-run.
 
 ## 11. Metric table (generated)
 
@@ -165,8 +205,9 @@ After editing the YAML run `python tests/render_coverage.py`.
 | `issuer_name_and_former_names` | LIVE_VERIFIED | sec: HTTP GET https://data.sec.gov/submissions/CIK##########.json (fields name, formerNames[name,from,to]) | direct | yes: META, TWTR, AAPL |
 | `exchange_listing` | LIVE_VERIFIED | sec: HTTP GET https://www.sec.gov/files/company_tickers_exchange.json (exchange); obb.nasdaq.equity.quote (exchange | direct | yes: AAPL, BRK-B, KOSS |
 | `security_type` | LIVE_VERIFIED | nasdaqtrader: HTTP GET https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt (columns Symbol, Security Name, Market C | direct | yes: AAPL, GOOG, GOOGL, META, NVDA, KOSS |
-| `sic_code_and_description` | LIVE_VERIFIED | sec: HTTP GET https://data.sec.gov/submissions/CIK##########.json (sic, sicDescription) | direct | yes: AAPL, MSFT, NVDA, AMZN, GOOGL, META |
-| `sector_industry_vendor` | LIVE_VERIFIED | nasdaq: obb.nasdaq.equity.quote(symbol) (sector, industry); obb.nasdaq.equity.screener | direct | yes: AAPL, GOOGL, GOOG, BRK.B, BRK.A |
+| `sic_code_and_description` | LIVE_VERIFIED | sec: HTTP GET https://data.sec.gov/submissions/CIK##########.json (sic, sicDescription) | direct | yes: AAPL, MSFT, NVDA, AMD, AVGO, META |
+| `nasdaq_sector_industry` | LIVE_VERIFIED | nasdaq: obb.nasdaq.equity.quote(symbol) and obb.nasdaq.equity.profile(symbol) (sector, industry); obb.nasdaq.equity.sc | direct | yes: AAPL, MSFT, NVDA, AMD, AVGO, META |
+| `normalized_classification` | UNAVAILABLE | none: none | direct | yes: QCOM, ASML |
 | `fiscal_year_end` | LIVE_VERIFIED | sec: HTTP GET https://data.sec.gov/submissions/CIK##########.json (fiscalYearEnd as MMDD) | direct | yes: AAPL, MSFT, NVDA, AVGO, COST, PTON |
 | `share_class` | DERIVED | derived: derived from SEC submissions tickers[] + nasdaqtrader Security Name | derived | yes: GOOGL, GOOG, META, BRK-B |
 | `ticker_history` | UNAVAILABLE | none: none | direct | yes: META, TWTR, ATVI |
@@ -182,12 +223,15 @@ After editing the YAML run `python tests/render_coverage.py`.
 | `week52_high_low` | DERIVED | derived: derived; cross-check obb.nasdaq.equity.quote (year_high, year_low) | derived | yes: AAPL, NVDA, MSFT |
 | `price_return` | DERIVED | derived: derived | derived | yes: RIVN |
 | `drawdown_from_52w_high` | DERIVED | derived: derived | derived | yes: AAPL, NVDA, MSFT |
+| `drawdown_from_52w_closing_high` | DERIVED | derived: derived | derived | yes: AAPL, NVDA, MSFT |
+| `total_return` | UNAVAILABLE | none: none | direct | no |
 | `benchmark_return` | LIVE_VERIFIED | cboe: obb.cboe.equity.historical(SPY\|QQQ\|XLK) ; obb.cboe.index.historical(SPX) ; obb.nasdaq.index.historical(COMP) | direct | yes: SPY, QQQ, XLK, SPX, COMP |
 | `relative_return_vs_benchmark` | DERIVED | derived: derived | derived | no |
 | `sector_relative_return` | NOT_VERIFIED | derived: derived | derived | no |
 | `shares_outstanding` | LIVE_VERIFIED | sec: HTTP GET https://data.sec.gov/api/xbrl/companyfacts/CIK##########.json (dei:EntityCommonStockSharesOutstanding | direct | yes: AAPL, GOOGL, BRK-B, META |
-| `market_cap_quote` | LIVE_VERIFIED | nasdaq: obb.nasdaq.equity.quote(symbol) (market_cap) | direct | yes: AAPL, NVDA, MSFT, GOOGL, GOOG, BRK.A |
-| `market_cap_issuer` | DERIVED | derived: derived | derived | yes: GOOGL, GOOG, BRK.A, BRK.B |
+| `quoted_market_cap_per_listing` | LIVE_VERIFIED | nasdaq: obb.nasdaq.equity.quote(symbol) (market_cap) | direct | yes: AAPL, NVDA, MSFT, GOOGL, GOOG, BRK.A |
+| `issuer_market_cap` | DERIVED | derived: derived | derived | yes: GOOGL, GOOG, BRK.A, BRK.B |
+| `security_market_cap` | UNAVAILABLE | none: none | direct | yes: GOOGL, BRK-B |
 | `average_volume_and_dividend_yield` | LIVE_VERIFIED | nasdaq: obb.nasdaq.equity.quote(symbol) (average_volume, annualized_dividend, dividend_yield, ex_dividend_date) | direct | yes: AAPL, RIVN, BRK.B |
 
 #### income_statement

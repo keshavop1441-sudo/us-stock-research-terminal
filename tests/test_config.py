@@ -81,3 +81,27 @@ def test_secrets_and_local_data_are_git_ignored():
     assert ".env" in ignored
     assert "*.duckdb" in ignored
     assert "!.env.example" in ignored
+
+
+# --- SEC_USER_AGENT -------------------------------------------------------------------------------------------------
+def test_sec_user_agent_is_optional_and_never_defaulted_to_a_contact():
+    assert Settings().sec_user_agent is None
+    assert Settings(sec_user_agent="   ").sec_user_agent is None
+
+
+def test_sec_user_agent_requires_application_name_and_contact(monkeypatch):
+    assert Settings(sec_user_agent="  MyTerminal   ops@example.org ").sec_user_agent == "MyTerminal ops@example.org"
+    assert Settings(sec_user_agent="MyTerminal https://example.org/contact").sec_user_agent
+    for bad in ("MyTerminal", "ops@example.org", "MyTerminal not-a-contact"):
+        with pytest.raises(ValueError, match="SEC_USER_AGENT"):
+            Settings(sec_user_agent=bad)
+    monkeypatch.setenv("SEC_USER_AGENT", "MyTerminal ops@example.org")
+    assert Settings.from_env(env_file=None).sec_user_agent == "MyTerminal ops@example.org"
+    monkeypatch.delenv("SEC_USER_AGENT")
+    assert Settings.from_env(env_file=None).sec_user_agent is None
+
+
+def test_repository_files_contain_no_personal_contact_for_the_sec():
+    root = PROJECT_ROOT
+    text = (root / ".env.example").read_text(encoding="utf-8")
+    assert "SEC_USER_AGENT=<ApplicationName>" in text and "@" not in text.split("SEC_USER_AGENT")[1].splitlines()[0]

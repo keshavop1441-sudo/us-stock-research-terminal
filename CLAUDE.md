@@ -92,4 +92,13 @@ Hermetic: temp databases (`tmp_path`), Ollama pointed at a closed port or a mock
   NOT_MEANINGFUL / NOT_COMPARABLE); never turn a non-OK state into 0 or a percentage. Growth uses values from the same
   filing (`same_filing_pair`); net income means `net_income_to_common`; market cap is per issuer; no TTM share counts.
 - SEC `BRK-B` vs Nasdaq/Cboe `BRK.B`: use `app/models/symbols.py`; identity is the CIK. Dates/periods: `app/models/periods.py`.
+- Debt is never inferred zero from an absent line: `total_debt` is 0 only if all core lines are explicitly reported or the filing explicitly evidences no debt
+  (`explicit_no_debt_evidence`); otherwise MISSING_INPUT. No filer-type shortcut.
+- Classification: Nasdaq sector/industry and SEC SIC are separate taxonomies; GICS is not used. Store raw values with their source; never convert between
+  systems (`app/screening/classification.py`). A query is evaluated in one named taxonomy.
+- Market cap: `issuer_market_cap` (one per CIK, primary listing) is the only market cap used for issuer-level valuation; `security_market_cap` is UNAVAILABLE.
+  Returns are PRICE returns (no dividends) and must never be called total return.
+- SEC accounting facts: raw `companyfacts`/`submissions` are the provenance layer (`app/models/sec_facts.py`); OpenBB statements are a convenience view.
+- `SEC_USER_AGENT` (env var, format `<ApplicationName> <contact email or URL>`) is required for SEC access. Never hard-code or invent a contact in the repo.
+- Phase 3 starts with a staged universe pilot (`universe_pilot` in the coverage YAML): do not load the full universe until its acceptance criteria pass.
 

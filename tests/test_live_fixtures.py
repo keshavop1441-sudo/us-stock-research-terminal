@@ -108,9 +108,8 @@ def test_berkshire_without_debt_lines_is_missing_not_debt_free():
         row["current_portion_of_long_term_debt"],
         row["long_term_debt"],
         balance_sheet_present=True,
-        company_type=data["company_type"],
     )
-    assert debt.state is MetricState.MISSING_INPUT
+    assert debt.state is MetricState.MISSING_INPUT and debt.reason.startswith("DEBT_COMPONENT_ABSENT:")
     assert m.debt_to_equity(debt, row["total_equity"]).state is MetricState.MISSING_INPUT
     assert (
         m.net_debt(debt, row["cash_and_equivalents"], row["short_term_investments"]).state is MetricState.MISSING_INPUT
@@ -118,10 +117,11 @@ def test_berkshire_without_debt_lines_is_missing_not_debt_free():
     assert "diluted_eps" in data["income_row_absent_fields"]  # no EPS either: P/E is MISSING, not computed from guesses
 
 
-def test_apple_debt_components_present_give_a_flagged_free_total():
+def test_apple_debt_components_all_reported_give_a_total():
     # AAPL FY2025 balance sheet, as returned live (fundamentals run 36954761165, sec.balance.AAPL.annual)
-    debt = m.total_debt(7979e6, 12350e6, 78328e6, balance_sheet_present=True, company_type="industrial")
-    assert debt.state is MetricState.OK and debt.value == pytest.approx(98657e6) and debt.flags == ()
+    debt = m.total_debt(7979e6, 12350e6, 78328e6, balance_sheet_present=True)
+    assert debt.state is MetricState.OK and debt.value == pytest.approx(98657e6)
+    assert debt.flags == ("FINANCE_LEASES_NOT_REPORTED",)  # lease line not passed: left out and flagged, not zeroed
     assert m.net_debt(debt, 35934e6, 18763e6).value == pytest.approx(98657e6 - 35934e6 - 18763e6)
 
 
@@ -143,6 +143,23 @@ def test_market_cap_is_per_quote_price_times_all_shares_so_listings_are_never_su
     assert naive_sum > 1.9 * chosen.value  # the double count the rule prevents
     assert m.issuer_market_cap({"AAPL": quotes["AAPL"]["market_cap"]}, "AAPL").flags == ()
     assert m.issuer_market_cap({"GOOG": 1.0}, "GOOGL").state is MetricState.MISSING_INPUT
+
+
+def test_every_listing_of_a_multi_class_issuer_is_screened_on_the_same_issuer_market_cap():
+    quotes = {q["symbol"]: q["market_cap"] for q in load("multiclass_quotes.json")["quotes"]}
+    googl_family = {k: quotes[k] for k in ("GOOGL", "GOOG")}
+    brk_family = {k: quotes[k] for k in ("BRK.A", "BRK.B")}
+    # P/S for the GOOG row and the GOOGL row use one issuer cap (the designated primary listing's), hence one ratio
+    ratios = {
+        listing: m.price_to_sales(m.issuer_market_cap(googl_family, "GOOGL").value, 400e9).value
+        for listing in googl_family
+    }
+    assert ratios["GOOG"] == ratios["GOOGL"] == pytest.approx(googl_family["GOOGL"] / 400e9)
+    assert (
+        m.issuer_market_cap(brk_family, "BRK.B").value == brk_family["BRK.B"]
+    )  # primary choice is explicit, not implied
+    # the per-quote figures differ, which is exactly why one primary must be designated
+    assert googl_family["GOOGL"] != googl_family["GOOG"]
 
 
 def test_share_count_sources_differ_by_class_structure():

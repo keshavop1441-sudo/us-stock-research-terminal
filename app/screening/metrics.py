@@ -158,34 +158,42 @@ def total_debt(
     finance_lease_liabilities: object = None,
     *,
     balance_sheet_present: bool,
-    company_type: str | None = None,
+    explicit_no_debt_evidence: bool = False,
 ) -> MetricResult:
-    """Financial debt = short-term borrowings + current portion of long-term debt + long-term debt + finance leases.
+    """Financial debt = short-term borrowings + current portion of long-term debt + long-term debt (+ finance leases).
 
     Operating-lease liabilities are excluded (use a separate, explicitly named metric if wanted).
-    XBRL filers omit zero lines, so for an ``industrial`` filer (OpenBB/SEC ``company_type``) with a balance sheet for
-    the period an absent COMPONENT counts as zero WITH A FLAG. For any other or unknown ``company_type`` an absent
-    component is MISSING_INPUT: the audit found Berkshire Hathaway ("diversified") reports no debt lines at all on a
-    $1.2T balance sheet, so "absent" is not evidence of "zero" there. With no balance sheet there is no evidence
-    either way -> MISSING_INPUT.
+
+    ZERO IS NEVER INFERRED FROM ABSENCE. Debt is 0 only when
+      * every one of the three core components is explicitly reported (a reported 0 is a value), or
+      * the caller passes ``explicit_no_debt_evidence=True`` because the filing itself says the company has no debt
+        (e.g. an explicit tag/disclosure) and no component contradicts that.
+    Otherwise, if any core component is absent, the result is MISSING_INPUT: a sum of the reported components would be
+    a lower bound, not the debt. (Audit: Berkshire Hathaway reports none of the lines on a USD 1.2T balance sheet;
+    absence there says nothing about debt.) Finance leases are optional: when absent they are left out of the total
+    and the result carries FINANCE_LEASES_NOT_REPORTED.
     """
-    parts = {
+    core = {
         "short_term_debt": _num(short_term_debt),
         "current_portion_long_term_debt": _num(current_portion_long_term_debt),
         "long_term_debt": _num(long_term_debt),
-        "finance_lease_liabilities": _num(finance_lease_liabilities),
     }
-    present = {k: v for k, v in parts.items() if v is not None}
-    if any(v < 0 for v in present.values()):
+    leases = _num(finance_lease_liabilities)
+    reported = {k: v for k, v in core.items() if v is not None}
+    if any(v < 0 for v in [*reported.values(), *([leases] if leases is not None else [])]):
         return _no(MetricState.NOT_MEANINGFUL, "NEGATIVE_DEBT_COMPONENT")
     if not balance_sheet_present:
         return _no(MetricState.MISSING_INPUT, "NO_BALANCE_SHEET")
-    absent = sorted(k for k, v in parts.items() if v is None and k != "finance_lease_liabilities")
-    if absent and company_type != "industrial":
-        return _no(MetricState.MISSING_INPUT, "DEBT_LINES_ABSENT_NON_INDUSTRIAL_OR_UNKNOWN_FILER")
-    if not present:
-        return _ok(0.0, ("NO_DEBT_LINES_REPORTED_ASSUMED_ZERO",))
-    return _ok(sum(present.values()), tuple(f"ASSUMED_ZERO:{k}" for k in absent))
+    total = sum(reported.values()) + (leases or 0.0)
+    flags = () if leases is not None else ("FINANCE_LEASES_NOT_REPORTED",)
+    if explicit_no_debt_evidence:
+        if total > 0:
+            return _no(MetricState.NOT_MEANINGFUL, "CONTRADICTORY_NO_DEBT_EVIDENCE")
+        return _ok(0.0, ("EXPLICIT_NO_DEBT_EVIDENCE",))
+    absent = sorted(k for k, v in core.items() if v is None)
+    if absent:
+        return _no(MetricState.MISSING_INPUT, "DEBT_COMPONENT_ABSENT:" + ",".join(absent))
+    return _ok(total, flags)
 
 
 def net_debt(debt: MetricResult, cash_and_equivalents: object, short_term_investments: object) -> MetricResult:
@@ -225,9 +233,9 @@ def debt_to_equity(debt: MetricResult, stockholders_equity: object) -> MetricRes
 # --- valuation ------------------------------------------------------------------------------------------------------
 
 
-def price_to_sales(market_cap: object, revenue_ttm: object) -> MetricResult:
-    """Market capitalisation / trailing-twelve-month revenue."""
-    cap, revenue = _num(market_cap), _num(revenue_ttm)
+def price_to_sales(issuer_market_cap: object, revenue_ttm: object) -> MetricResult:
+    """Issuer market capitalisation / trailing-twelve-month issuer revenue (both are issuer-level quantities)."""
+    cap, revenue = _num(issuer_market_cap), _num(revenue_ttm)
     if cap is None or cap <= 0:
         return _no(MetricState.MISSING_INPUT, "MARKET_CAP_MISSING")
     if revenue is None:
@@ -314,16 +322,19 @@ def drawdown_from_high(close: object, high_52w: object) -> MetricResult:
 
 
 def issuer_market_cap(caps_by_symbol: dict[str, object], primary_symbol: str) -> MetricResult:
-    """One market cap per ISSUER from per-listing quotes.
+    """The canonical market cap of an ISSUER (CIK), used for every issuer-level valuation such as P/S.
 
-    The audit (LIVE, 2026-10-02) found Nasdaq's ``market_cap`` is price x ALL shares of the issuer, computed per
-    quoted class: GOOGL 4.137T and GOOG 4.096T describe the same company, BRK.A and BRK.B likewise. Summing the
-    listings double counts, so the issuer value is the designated primary class's figure only, flagged when other
-    classes exist. A missing primary figure is MISSING_INPUT, not a silent switch to another class.
+    What the providers return (audit, LIVE 2026-10-02): Nasdaq's ``market_cap`` is, for each quoted listing, THAT
+    listing's price x ALL shares of the issuer (GOOGL 4.137T and GOOG 4.096T imply the same share count). It is
+    neither a security-specific cap (class shares x class price) nor exactly one issuer figure: it differs by the
+    class price used. The canonical definition is therefore fixed to ONE designated primary listing's figure, so every
+    listing of the issuer (GOOG and GOOGL alike) is screened on the same number. Listings are never summed.
+    A security-specific cap is not computable from the data (no per-class share counts) and is not invented.
+    A missing primary figure is MISSING_INPUT, not a silent switch to another class.
     """
     value = _num(caps_by_symbol.get(primary_symbol))
     if value is None or value <= 0:
-        return _no(MetricState.MISSING_INPUT, "PRIMARY_CLASS_MARKET_CAP_MISSING")
+        return _no(MetricState.MISSING_INPUT, "PRIMARY_LISTING_MARKET_CAP_MISSING")
     others = [k for k in caps_by_symbol if k != primary_symbol]
     return _ok(value, ("MULTI_CLASS_ALL_SHARES_AT_PRIMARY_PRICE",) if others else ())
 

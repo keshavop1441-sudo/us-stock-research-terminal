@@ -156,6 +156,12 @@ Copy `.env.example` to `.env` (git-ignored). No API keys are needed for the curr
 | `FAST_THINK` | `false` | Fast reasoning mode (wins if both flags are true) |
 | `DEEP_THINK` | `true` | Deep reasoning mode |
 | `DATABASE_PATH` | `data/research.duckdb` | Relative paths resolve against the project root |
+| `SEC_USER_AGENT` | unset | **Required for any SEC download.** `<ApplicationName> <contact email or URL>`, e.g. `MyResearchTerminal you@your-domain.example` |
+
+`SEC_USER_AGENT` is an environment variable (or a line in your git-ignored `.env`), never a value in the repository. The SEC's fair-access policy requires every
+request to identify the caller with an application or organisation name plus a way to contact you; a generic agent without a contact was refused with HTTP 403
+in the Phase 2 audit. The format is validated (a name, a space, then an email address or an http(s) URL). Use your own details: the project ships no contact and
+does not guess one. For the provider-probe workflow, set the same value as the repository variable `SEC_USER_AGENT`.
 
 ## Tests and CI
 

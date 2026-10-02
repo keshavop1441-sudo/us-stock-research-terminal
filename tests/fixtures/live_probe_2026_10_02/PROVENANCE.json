@@ -129,5 +129,16 @@
   },
   "probe_ids": "connect_identity sec.submissions.*, sec.company_tickers_exchange (run 36954761165)",
   "licence_note": "public market/regulatory data; no personal data retained (insider names omitted)"
+ },
+ "taxonomy.json": {
+  "kind": "transcribed from PROBE log lines of the read-only audit probe (taxonomy group), values unmodified, fields trimmed",
+  "evidence_run": {
+   "run": 36957138239,
+   "sha": "778200026ab299942caeeaad5bae67b27fe5a66a",
+   "job": 110682502819,
+   "group": "taxonomy"
+  },
+  "probe_ids": "taxonomy.nasdaq_quote.*, taxonomy.nasdaq_profile.*, taxonomy.sec_sic.*, taxonomy.screener.* (run 36957138239, job 110682502819)",
+  "licence_note": "public market/regulatory data; no personal data retained"
  }
 }

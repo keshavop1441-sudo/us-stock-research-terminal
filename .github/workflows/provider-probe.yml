@@ -2,7 +2,7 @@ name: Provider probe (read-only data-source audit)
 
 # Not part of the product. Runs the read-only audit probe from a GitHub-hosted runner, because the development
 # sandbox cannot reach SEC / Nasdaq / Cboe / USAspending. Output: one `PROBE {json}` line per probe in the job log.
-# Optional repository variable SEC_USER_AGENT ("Your Name your@email") identifies the caller to the SEC as its
+# Optional repository variable SEC_USER_AGENT ("<ApplicationName> <contact email or URL>") identifies the caller to the SEC as its
 # fair-access policy asks; without it the probe identifies this repository only.
 
 on:
