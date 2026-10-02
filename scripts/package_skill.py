@@ -36,6 +36,10 @@ SECRET = re.compile(
     r"(sk-ant-[A-Za-z0-9_-]{10,}|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)"
 )
 EXECUTABLE = {"scripts/research.py"}
+# The frontmatter keys the Agent Skills format defines. There is NO ``dependencies`` key: Claude does not install
+# packages from frontmatter, and validators reject unknown keys. Dependencies are installed from the hash-locked
+# ``scripts/requirements.lock`` by the instructions in the SKILL.md body.
+ALLOWED_FRONTMATTER = {"name", "description", "license", "compatibility", "metadata", "allowed-tools"}
 
 
 class PackagingError(Exception):
@@ -52,6 +56,11 @@ def validate_skill_md(text: str) -> dict[str, str]:
         key, sep, value = line.partition(":")
         if sep and not line.startswith(" "):
             fields[key.strip()] = value.strip()
+    unknown = sorted(set(fields) - ALLOWED_FRONTMATTER)
+    if unknown:
+        raise PackagingError(
+            f"SKILL.md frontmatter has unsupported keys {unknown}; allowed: {sorted(ALLOWED_FRONTMATTER)}"
+        )
     name, description = fields.get("name", ""), fields.get("description", "")
     if name != SKILL_NAME:
         raise PackagingError(f"SKILL.md name must be {SKILL_NAME!r} (the folder name), got {name!r}")

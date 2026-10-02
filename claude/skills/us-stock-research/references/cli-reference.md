@@ -50,3 +50,7 @@ Each item: `id, section, company{ticker,cik,name}, source, source_type, as_of, f
 ## Common warning/error codes
 
 `SEC_USER_AGENT_MISSING`, `HTTP_403` (contact not accepted; do not retry), `HTTP_429`, `NETWORK`, `NOT_IN_DATABASE` (run `ingest`), `EXPECTED_UNSUPPORTED` (IFRS), `MISSING_DATA_EXCLUSIONS`, `INVALID_SCREEN_SPEC`, `INVALID_SYMBOLS`, `DATABASE_UNAVAILABLE` (another process is writing), `EMPTY_UNIVERSE`.
+
+## Launcher error: `DEPENDENCIES_MISSING`
+
+If the Python packages are not installed, `scripts/research.py` prints one envelope (`command` = `launcher`, exit 1) with `errors[0].code` = `DEPENDENCIES_MISSING` and `data.fix_command` (the hash-checked install of `scripts/requirements.lock`), `data.missing_module`, `data.python_version`. Run the fix once, then repeat the command.
