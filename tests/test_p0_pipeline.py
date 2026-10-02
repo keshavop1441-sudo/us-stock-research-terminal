@@ -553,7 +553,7 @@ def test_overall_verdict_on_the_pipeline_output_reconciles_execution_acceptance_
     assert verdict["pipeline_execution"]["genuine_failures"] == []
     assert [e["symbol"] for e in verdict["pipeline_execution"]["expected_unsupported"]] == ["TSM"]
     assert verdict["acceptance_criteria"]["status"] == "INCOMPLETE" and verdict["overall"] == "INCOMPLETE"
-    assert verdict["p1_gate"] == "CLOSED" and verdict["p1_gate_reasons"]
+    assert verdict["p1_gate"] == "CLOSED" and verdict["acceptance_reasons"]  # simulated: the gate cannot open
     assert sum(verdict["acceptance_criteria"]["counts"].values()) == 13
     assert set(verdict["acceptance_criteria"]["counts"]) != {"PASS"}  # never "all PASS" with unevaluated components
     ids = {x["id"] for x in verdict["known_coverage_limitations"]}
@@ -752,7 +752,63 @@ def test_the_markdown_report_shows_the_verdict_the_components_and_the_attributed
 
     _, report = completed
     text = render_markdown(report)
-    assert "**Overall: INCOMPLETE**" in text and "Pipeline execution: COMPLETED" in text
+    assert "OVERALL P0 ACCEPTANCE: INCOMPLETE" in text and "PIPELINE EXECUTION: COMPLETED" in text
+    assert "P1 PROGRESSION GATE: CLOSED" in text and "automated tests: NOT_REPORTED" in text
     assert "Expected unsupported coverage (not failures)" in text and "TSM" in text and "UNSUPPORTED_TAXONOMY" in text
     assert "`revenue_vs_nasdaq` **DEFERRED**" in text and "Provider warnings (attributed)" in text
     assert "UNSUPPORTED_TAXONOMY:TSM" in text and "NASDAQ_REVENUE_NOT_INGESTED" in text
+
+
+# --- P1 progression gate on pipeline output ---------------------------------------------------------------------------
+
+
+def test_the_progression_gate_is_separate_from_acceptance_on_a_forced_live_evaluation(rig):
+    """Forced-live evaluation of SIMULATED data: proves the gate LOGIC end to end (never evidence about providers)."""
+    from app.ingestion import p0_report as pr
+
+    criteria, first = evaluate_forced_live(rig)
+    ordered = list(criteria.values())
+    validation = ms.validation(rig.db_path)
+    summary = {"securities_attempted": 14, "companies_succeeded_all_stages": 13}
+    kw = {"integrity": validation["integrity"], "automated_tests": "PASSED"}
+    # synthetic data really misses two thresholds (0/10 four-year issuers, 14 SEC requests/s): measured FAILs block
+    failed = pr.verdict(first, ordered, summary, **kw)
+    assert failed["overall"] == "FAILED" and failed["p1_gate"] == "CLOSED"
+    assert {b["source"] for b in failed["progression_gate"]["blockers"]} == {
+        "A4.industrial_four_fiscal_years",
+        "A7.sec_sustained_rate",
+    }
+    for cid, name in (("A4", "industrial_four_fiscal_years"), ("A7", "sec_sustained_rate")):
+        comps(criteria[cid])[name].status = "PASS"  # what a clean live run would have measured
+    verdict = pr.verdict(first, ordered, summary, **kw)
+    assert verdict["overall"] == "INCOMPLETE"  # acceptance stays strict
+    assert verdict["pipeline_execution"]["status"] == "COMPLETED"
+    assert {c.id for c in ordered if c.status == "PARTIAL"} >= {"A3", "A4", "A7", "A10", "A11", "A12"}
+    gate = verdict["progression_gate"]
+    assert gate["status"] == verdict["p1_gate"] == "OPEN", gate["blockers"]
+    assert {d["component"] for d in gate["deferred_items"]} >= {"total_assets", "revenue_vs_nasdaq"}
+    assert pr.verdict(first, ordered, summary, integrity=kw["integrity"])["p1_gate"] == "CLOSED"  # tests not reported
+    text = "\n".join(pr._verdict_lines(verdict))
+    assert "OVERALL P0 ACCEPTANCE: INCOMPLETE" in text and "PIPELINE EXECUTION: COMPLETED" in text
+    assert "P1 PROGRESSION GATE: OPEN" in text and "Explicitly deferred items" in text
+
+
+def test_p1_gate_script_redecides_from_a_stored_report_without_changing_acceptance(completed, tmp_path):
+    import importlib.util
+    import json
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location(
+        "p1_gate", Path(__file__).resolve().parent.parent / "scripts" / "p1_gate.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    _, report = completed
+    stored = tmp_path / "report.json"
+    stored.write_text(json.dumps(report, default=str), encoding="utf-8")
+    assert module.main([str(stored), "--tests-status", "passed"]) == 1  # simulated providers can never open the gate
+    verdict = module.decide(json.loads(stored.read_text(encoding="utf-8")), "PASSED")
+    assert verdict["overall"] == report["verdict"]["overall"] == "INCOMPLETE"  # acceptance read back unchanged
+    assert verdict["acceptance_criteria"] == report["verdict"]["acceptance_criteria"]
+    assert "live_run" in {b["source"] for b in verdict["progression_gate"]["blockers"]}
+    assert module.main([str(tmp_path / "missing.json")]) == 2

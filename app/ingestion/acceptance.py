@@ -137,7 +137,8 @@ def overall_verdict(
     second_run_failures: int | None = None,
 ) -> dict[str, object]:
     """Reconcile execution, acceptance and coverage into one verdict. ``ACCEPTED`` needs ALL of: the run executed, no
-    genuine failure, and every criterion PASS. Known limitations are listed but cannot hide an unmet criterion."""
+    genuine failure, and every criterion PASS. Known limitations are listed but cannot hide an unmet criterion.
+    The P1 progression gate is a separate decision layer (``progression.py``) and does not alter any status here."""
     if run_fatal:
         execution = "ABORTED" if run_fatal in {"DATABASE_ERROR", "DATABASE_LOCKED"} else "DID_NOT_RUN"
     elif genuine_failures:
@@ -183,6 +184,5 @@ def overall_verdict(
         },
         "acceptance_criteria": {"status": acceptance, "counts": counts, "not_passed": not_passed},
         "known_coverage_limitations": known_limitations(expected_unsupported),
-        "p1_gate": "OPEN" if overall == "ACCEPTED" else "CLOSED",
-        "p1_gate_reasons": reasons,
+        "acceptance_reasons": reasons,  # why the overall verdict is not ACCEPTED; the P1 gate is progression.py
     }

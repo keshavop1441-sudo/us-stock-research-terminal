@@ -247,8 +247,16 @@ derived: **FAIL** if any component failed; **PASS** only if every required compo
 **DEFERRED / NOT_EVALUABLE** if nothing passed; **EXPECTED_UNSUPPORTED** if every component is. An unevaluated component can never be a PASS.
 
 The report states three things separately: *pipeline execution* (COMPLETED / COMPLETED_WITH_FAILURES / ABORTED / DID_NOT_RUN), *acceptance criteria* (ACCEPTED /
-INCOMPLETE / FAILED / NOT_RUN) and *known coverage limitations*. The overall verdict is ACCEPTED only with a clean execution and every criterion PASS; the P1 gate
-opens only then. `scripts/run_p0.py` exits 0 / 1 / 4 for ACCEPTED / FAILED / INCOMPLETE.
+INCOMPLETE / FAILED / NOT_RUN) and *known coverage limitations*. The overall verdict is ACCEPTED only with a clean execution and every criterion PASS.
+`scripts/run_p0.py` exits 0 / 1 / 4 for ACCEPTED / FAILED / INCOMPLETE.
+
+**P1 progression gate** (`app/ingestion/progression.py`) is a separate decision layer that answers "are there unresolved P0 blockers that prevent beginning P1?" and never
+changes an acceptance status. It is OPEN only if the pipeline COMPLETED with 0 genuine failures, the run was LIVE, no integrity violation was counted, the automated tests
+were reported PASSED, no component FAILED, and every non-PASS component has an explicit `ComponentPolicy` (`blocking_for_p0_completion`, `blocking_for_p1_entry`,
+`deferred_to`, `evidence_source`, `live_trigger_required`) with `blocking_for_p1_entry` false. A component without a policy blocks. Current non-blocking policies: A3 split
+detection (needs a real split; hermetic test), A4 total assets (deferred to P1), A7/A10 full-universe projection (P1/P2), A11 changed-fact / amendment / read-during-write
+(hermetic tests; the live re-run proves idempotency), A12 Nasdaq revenue (Nasdaq statements not ingested). Those criteria stay PARTIAL. Re-decide the gate from a stored
+report with `python scripts/p1_gate.py <report.json> --tests-status passed`.
 
 **What A12 can and cannot measure today:** it measures the 52-week high against Nasdaq's published `year_high` (14 listings) and `issuer_market_cap` against last close x dei
 shares for the *eligible* issuers (single-class, reliable dei shares, market cap present, facts available), reporting numerator, denominator, percentage and every
