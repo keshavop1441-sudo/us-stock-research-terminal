@@ -18,6 +18,7 @@ from pathlib import Path
 from app.database.connection import open_connection
 from app.database.errors import DatabaseUnavailableError
 from app.database.locking import DEFAULT_LOCK_TIMEOUT_SECONDS, WriterLock
+from app.database.quality_repository import QualityRepository
 from app.database.read_repository import ReadRepository
 from app.database.write_repository import WriteRepository
 
@@ -35,6 +36,17 @@ def reader(path: Path, *, wait: float = DEFAULT_READ_WAIT_SECONDS) -> Iterator[R
     con = open_connection(path, wait=wait)
     try:
         yield ReadRepository(con)
+    finally:
+        con.close()
+
+
+@contextmanager
+def quality(path: Path, *, wait: float = DEFAULT_READ_WAIT_SECONDS) -> Iterator[QualityRepository]:
+    """Read-only data-quality checks (ingestion validation). Not for the AI tool layer."""
+    _require_database_file(path)
+    con = open_connection(path, wait=wait)
+    try:
+        yield QualityRepository(con)
     finally:
         con.close()
 

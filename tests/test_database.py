@@ -17,7 +17,7 @@ from app.database.schema import (
 
 EXPECTED_TABLES = {
     "securities", "financial_facts", "price_daily", "filings", "earnings", "ownership",
-    "events", "sources", "research_runs", "query_history", "watchlists", "watchlist_items",
+    "events", "sources", "research_runs", "query_history", "watchlists", "watchlist_items", "market_quotes",
 }  # fmt: skip
 
 
@@ -192,3 +192,88 @@ def test_migration_refuses_to_drop_a_table_that_has_rows(tmp_path):
 
 def test_v2_ddl_covers_all_recreated_tables():
     assert set(DDL_V2_TABLES) == set(V2_RECREATED_TABLES)
+
+
+# --- v2 -> v3 (Phase 3A) ------------------------------------------------------------------------------------------
+
+
+def _make_v2_database(path):
+    """A schema-v2 database with rows in tables that foreign keys reference (sources, securities)."""
+    from app.database import schema
+
+    con = duckdb.connect(str(path))
+    con.execute("BEGIN")
+    for statement in schema.DDL:
+        con.execute(statement)
+    con.execute("INSERT INTO schema_meta VALUES ('schema_version', '2')")
+    con.execute("INSERT INTO sources (provider, dataset) VALUES ('sec', 'companyfacts')")
+    con.execute("INSERT INTO securities (ticker, cik) VALUES ('AAPL', '0000320193')")
+    con.execute("INSERT INTO price_daily (security_id, trade_date, close, source_id) VALUES (1, '2026-01-02', 1.5, 1)")
+    con.execute(
+        "INSERT INTO financial_facts VALUES ('0000320193|us-gaap|Revenues|USD||2025-09-27|0000320193-25-000079', "
+        "'0000320193', 'us-gaap', 'Revenues', 'USD', 1.0, NULL, '2025-09-27', 2025, 'FY', '10-K', '2025-10-31', "
+        "'0000320193-25-000079', 1)"
+    )
+    con.execute("COMMIT")
+    con.close()
+
+
+def _columns(con):
+    return {
+        t: [(r[0], r[1]) for r in con.execute(f"DESCRIBE {t}").fetchall()]
+        for t in [*TABLES, "schema_meta"]
+        if t != "schema_meta"
+    }
+
+
+def test_migration_v2_to_v3_keeps_rows_and_adds_columns(tmp_path):
+    path = tmp_path / "v2.duckdb"
+    _make_v2_database(path)
+    assert ensure_database(path) == SCHEMA_VERSION == 3
+    con = duckdb.connect(str(path))
+    assert con.execute("SELECT ticker, cik, sector_source, sic_source FROM securities").fetchall() == [
+        ("AAPL", "0000320193", None, None)
+    ]
+    row = con.execute(
+        "SELECT provider, command, parameters, provider_version, as_of, is_fallback FROM sources"
+    ).fetchall()
+    assert row == [("sec", None, None, None, None, False)]
+    assert con.execute("SELECT count(*), count(frame) FROM financial_facts").fetchone() == (1, 0)
+    assert con.execute("SELECT count(*) FROM price_daily").fetchone()[0] == 1
+    owner_columns = {r[0] for r in con.execute("DESCRIBE ownership").fetchall()}
+    assert {"transaction_price", "shares_owned_after", "acquired_disposed", "is_derivative", "security_title",
+            "ownership_nature", "is_10b5_1"} <= owner_columns  # fmt: skip
+    assert con.execute("SELECT count(*) FROM market_quotes").fetchone()[0] == 0
+    con.close()
+    assert ensure_database(path) == 3  # a second run is a no-op
+
+
+def test_upgraded_and_fresh_databases_have_identical_shape(tmp_path):
+    _make_v2_database(tmp_path / "old.duckdb")
+    ensure_database(tmp_path / "old.duckdb")
+    ensure_database(tmp_path / "new.duckdb")
+    old, new = duckdb.connect(str(tmp_path / "old.duckdb")), duckdb.connect(str(tmp_path / "new.duckdb"))
+    assert _columns(old) == _columns(new)
+    old.close()
+    new.close()
+
+
+def test_v1_database_walks_through_every_migration_to_v3(tmp_path):
+    path = tmp_path / "v1.duckdb"
+    _make_v1_database(path)
+    assert ensure_database(path) == 3
+    con = duckdb.connect(str(path))
+    assert "frame" in {r[0] for r in con.execute("DESCRIBE financial_facts").fetchall()}
+    con.close()
+
+
+def test_failed_v3_migration_rolls_back_completely(tmp_path, monkeypatch):
+    path = tmp_path / "v2.duckdb"
+    _make_v2_database(path)
+    monkeypatch.setitem(migrations.DDL_V3_TABLES, "market_quotes", "CREATE TABLE market_quotes (broken syntax")
+    with pytest.raises(duckdb.Error):
+        ensure_database(path)
+    con = duckdb.connect(str(path))
+    assert migrations.read_schema_version(con) == 2
+    assert "frame" not in {r[0] for r in con.execute("DESCRIBE financial_facts").fetchall()}  # ALTERs were rolled back
+    con.close()

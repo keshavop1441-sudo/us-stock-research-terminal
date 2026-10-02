@@ -100,5 +100,8 @@ Hermetic: temp databases (`tmp_path`), Ollama pointed at a closed port or a mock
   Returns are PRICE returns (no dividends) and must never be called total return.
 - SEC accounting facts: raw `companyfacts`/`submissions` are the provenance layer (`app/models/sec_facts.py`); OpenBB statements are a convenience view.
 - `SEC_USER_AGENT` (env var, format `<ApplicationName> <contact email or URL>`) is required for SEC access. Never hard-code or invent a contact in the repo.
+- Phase 3A P0 pilot (14 securities): `scripts/run_p0.py` (live, needs `SEC_USER_AGENT`), `tests/p0_rehearsal.py` (SIMULATED, mechanics only). Schema is v3; the manifest is pinned
+  (`app/ingestion/manifest.py`); fetch (`*_source`, `sec_http`) / normalise (`*_normalize`) / calculate (`app/screening`) stay separate; derived metrics are never stored. Upserts report
+  inserted/updated/unchanged/duplicates; data-quality SQL lives in `QualityRepository`, not `ReadRepository`. Simulated runs never count as live evidence.
 - Phase 3 starts with a staged universe pilot (`universe_pilot` in the coverage YAML): do not load the full universe until its acceptance criteria pass.
 

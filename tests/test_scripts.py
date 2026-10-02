@@ -37,7 +37,7 @@ def fake_openbb(ok: bool):
 def test_init_db_creates_the_database_and_is_repeatable(app_env, capsys):
     assert init_db.main() == 0
     assert init_db.main() == 0
-    assert app_env.is_file() and "schema v2" in capsys.readouterr().out
+    assert app_env.is_file() and "schema v3" in capsys.readouterr().out
 
 
 def test_init_db_reports_busy_with_its_own_exit_code(app_env, hold, capsys):

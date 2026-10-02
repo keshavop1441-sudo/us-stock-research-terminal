@@ -81,7 +81,8 @@ def test_schema_drift_and_malformed_points_are_rejected_not_ignored():
 
 
 def test_conversion_to_the_write_record_keeps_everything_the_schema_can_hold():
-    record = parse(FY2025).to_record(source_id=7)
+    raw = parse(FY2025)
+    record = raw.to_record(source_id=7)
     assert isinstance(record, FinancialFactRecord)
     assert (record.taxonomy, record.concept, record.unit, record.value) == (
         "us-gaap",
@@ -97,7 +98,7 @@ def test_conversion_to_the_write_record_keeps_everything_the_schema_can_hold():
     assert (record.form, record.fiscal_year, record.fiscal_period, record.accession_no, record.source_id) == (
         "10-K", 2025, "FY", "0001874178-26-000008", 7,
     )  # fmt: skip
-    assert "frame" not in FinancialFactRecord.model_fields  # schema gap G7: kept on RawFactPoint until a column exists
+    assert record.frame == raw.frame  # schema gap G7 closed in v3: the SEC frame label is stored
 
 
 def test_restated_vintages_reach_the_database_as_separate_rows_with_their_provenance(db_path, con):

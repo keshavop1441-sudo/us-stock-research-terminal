@@ -97,9 +97,9 @@ def test_two_retrievals_of_the_same_dataset_are_two_evidence_rows_by_design(db_p
     assert first != second and count(con, "sources") == 2
 
 
-def test_current_source_record_has_no_structured_command_params_version_or_as_of():
-    """Gap proven by the audit (see data_coverage.yaml): these live only inside the free-text ``detail`` today."""
-    assert set(SourceRecord.model_fields) == {"provider", "dataset", "url", "content_hash", "detail"}
+def test_source_record_has_structured_command_params_version_as_of_and_fallback_flag():
+    """Gap S1-S3 proven by the audit (see data_coverage.yaml), closed by schema v3."""
+    assert {"command", "parameters", "provider_version", "as_of", "is_fallback"} <= set(SourceRecord.model_fields)  # v3
 
 
 # --- duplicate logical records and restatements ------------------------------------------------------------------
@@ -131,7 +131,7 @@ def test_same_fact_from_the_same_filing_twice_is_one_row_even_when_the_value_is_
     with access.writer(db_path, "test") as w:
         w.upsert_financial_facts([fact(-1.0, "0001-25-1")])
         result = w.upsert_financial_facts([fact(-2.0, "0001-25-1")])  # provider corrected its payload
-    assert (result.inserted, result.updated) == (0, 1)
+    assert (result.inserted, result.updated, result.unchanged) == (0, 1, 0)
     assert con.execute("SELECT value FROM financial_facts").fetchall() == [(-2.0,)]
 
 
@@ -206,10 +206,10 @@ def test_identical_insider_lines_in_one_filing_need_line_numbers_to_survive(db_p
     assert collapsed.key == first.key
 
 
-def test_ownership_cannot_represent_price_or_post_transaction_holdings_yet():
-    """Gap proven by the audit: Form 4 rows carry price, securities_owned, A/D, derivative flag (data_coverage.yaml)."""
+def test_ownership_represents_price_and_post_transaction_holdings_since_v3():
+    """Gap G1 proven by the audit (Form 4 rows carry price, securities_owned, A/D, derivative flag); closed in v3."""
     fields = set(OwnershipRecord.model_fields)
-    assert not fields & {"transaction_price", "shares_owned_after", "acquired_disposed", "is_derivative", "is_10b5_1"}
+    assert fields >= {"transaction_price", "shares_owned_after", "acquired_disposed", "is_derivative", "is_10b5_1"}
 
 
 # --- news / events: stable references dedupe across providers ----------------------------------------------------

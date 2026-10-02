@@ -101,8 +101,8 @@ def test_security_update_works_while_price_rows_reference_it(db_path, con):
 def test_same_fact_twice_is_one_row_even_with_cik_spelled_differently(db_path, con):
     with access.writer(db_path, "test") as w:
         assert w.upsert_financial_facts([fact()]) == UpsertResult(inserted=1, updated=0)
-        assert w.upsert_financial_facts([fact(cik="0000320193")]) == UpsertResult(inserted=0, updated=1)
-        assert w.upsert_financial_facts([fact(cik=" 320193 ")]) == UpsertResult(inserted=0, updated=1)
+        assert w.upsert_financial_facts([fact(cik="0000320193")]) == UpsertResult(0, 0, unchanged=1)
+        assert w.upsert_financial_facts([fact(cik=" 320193 ")]) == UpsertResult(0, 0, unchanged=1)
     assert count(con, "financial_facts") == 1
 
 
@@ -141,7 +141,7 @@ def test_point_in_time_fact_without_period_start_or_accession_is_idempotent(db_p
 def test_duplicate_keys_inside_one_batch_keep_the_last_value(db_path, con):
     with access.writer(db_path, "test") as w:
         result = w.upsert_financial_facts([fact(value=1.0), fact(value=2.0), fact(value=3.0)])
-    assert result == UpsertResult(inserted=1, updated=0)
+    assert result == UpsertResult(inserted=1, updated=0, duplicates=2)
     assert con.execute("SELECT value FROM financial_facts").fetchone() == (3.0,)
 
 
@@ -149,7 +149,7 @@ def test_large_batch_is_chunked_and_idempotent(db_path, con):
     facts = [fact(period_end=D(2000, 1, 1) + dt.timedelta(days=i), period_start=None) for i in range(1234)]
     with access.writer(db_path, "test") as w:
         assert w.upsert_financial_facts(facts) == UpsertResult(inserted=1234, updated=0)
-        assert w.upsert_financial_facts(facts) == UpsertResult(inserted=0, updated=1234)
+        assert w.upsert_financial_facts(facts) == UpsertResult(inserted=0, updated=0, unchanged=1234)
     assert count(con, "financial_facts") == 1234
 
 

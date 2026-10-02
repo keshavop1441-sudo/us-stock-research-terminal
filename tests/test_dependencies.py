@@ -18,7 +18,8 @@ IMPORT_TO_DIST = {
     "openbb_news": "openbb-news",
     "yaml": "PyYAML",
 }
-LOCAL_PACKAGES = {"app", "scripts", "tests"}
+# sibling helper modules in tests/ (imported as top-level names, e.g. ``import p0_fakes``) are local code too
+LOCAL_PACKAGES = {"app", "scripts", "tests"} | {p.stem for p in (ROOT / "tests").glob("*.py")}
 
 
 def normalise(name: str) -> str:

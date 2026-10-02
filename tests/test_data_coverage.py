@@ -240,7 +240,7 @@ def test_market_cap_definitions_distinguish_issuer_and_security_level():
     assert "quoted_market_cap_per_listing" in BY_ID["issuer_market_cap"]["inputs"]
 
 
-def test_sec_provenance_preserves_every_required_field_and_names_the_one_gap():
+def test_sec_provenance_preserves_every_required_field_and_stores_all_of_them():
     fields = DATA["sec_provenance"]["fields_preserved"]
     required = {
         "cik", "taxonomy", "tag_concept", "unit", "value", "start", "end", "instant", "filed", "form", "fy", "fp",
@@ -248,8 +248,9 @@ def test_sec_provenance_preserves_every_required_field_and_names_the_one_gap():
     }  # fmt: skip
     assert required <= set(fields)
     gaps = {name for name, f in fields.items() if f["record_field"].startswith("NONE")}
-    assert gaps == {"frame"}  # the only field the schema cannot hold yet, and it is tracked as G7
-    assert "G7_fact_frame" in {g["id"] for g in DATA["schema_gaps"]}
+    assert gaps == set()  # schema v3 stores every preserved field, including the frame (gap G7, closed in Phase 3A)
+    g7 = next(g for g in DATA["schema_gaps"] if g["id"] == "G7_fact_frame")
+    assert g7["status"].startswith("APPLIED") and fields["frame"]["record_field"] == "financial_facts.frame"
     assert "raw" in DATA["sec_provenance"]["decision"].lower() and "OpenBB" in DATA["sec_provenance"]["decision"]
 
 
@@ -293,3 +294,22 @@ def test_debt_rule_never_infers_zero_from_absence():
     assert "company_type" not in debt["inputs"]
     assert "industrial" not in (debt["formula"] + debt["missing_data_behavior"])
     assert "absent debt lines count as zero" not in json.dumps(DATA["comparability_rules"])
+
+
+def test_p0_pilot_section_states_what_was_and_was_not_verified():
+    p0 = DATA["p0_pilot"]
+    assert p0["schema_version_required"] == 3 and len(p0["manifest"]["securities"]) == 14
+    tags = p0["tag_selection"]
+    probed, unprobed = set(tags["live_probed_in_phase_2"]), set(tags["not_probed_individually"])
+    assert probed.isdisjoint(unprobed) and "GrossProfit" in unprobed and "NetIncomeLoss" in probed
+    assert p0["live_status"]["development_sandbox"].startswith("NOT_RUN")
+    assert "ProfitLoss" in tags["net_income"] and "never a fallback" in tags["net_income"]
+    for gap in DATA["source_evidence_model"]["gaps_proven_by_audit"]:
+        if gap["required_before_phase3"]:
+            assert gap["status"].startswith(("APPLIED", "ENFORCED")), gap["id"]
+
+
+def test_p0_manifest_in_the_yaml_matches_the_code():
+    from app.ingestion.manifest import SYMBOLS
+
+    assert tuple(DATA["p0_pilot"]["manifest"]["securities"]) == SYMBOLS

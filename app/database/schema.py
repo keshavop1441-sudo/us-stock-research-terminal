@@ -1,4 +1,4 @@
-"""DuckDB schema for the research terminal (schema version 2).
+"""DuckDB schema for the research terminal (schema version 3).
 
 Design rules
 ------------
@@ -26,12 +26,19 @@ ownership        (cik, holder_type, holder_key, as_of_date, accession_no, line_n
                  several transactions/positions within one filing. Stored as ``ownership_key``.
 events           (cik, event_type, source_ref) - source_ref is a stable reference from the source
                  (URL, accession number + item, provider id). Stored as ``event_key``.
-sources          append-only: one row per retrieval (provenance), deliberately not de-duplicated.
+market_quotes    (security_id, quote_date) - one provider quote per listing per provider-reported day (v3). The quoted
+                 ``market_cap`` is the PROVIDER's figure for that listing (price x ALL issuer shares), not a
+                 security-specific cap; issuer-level use goes through ``issuer_market_cap``.
+sources          append-only: one row per retrieval (provenance), deliberately not de-duplicated. v3 adds the
+                 structured ``command``/``parameters``/``provider_version``/``as_of`` and ``is_fallback``.
 query_history, research_runs, watchlists, watchlist_items: created by the application, not ingested.
 
 ``*_key`` columns are the primary keys of their tables and a CHECK constraint ties each one to its
 component columns, so a key can never disagree with the data. The keys are computed in one place:
 the ``key`` property of the record models in ``app.models.records``.
+
+Schema v3 (Phase 3A) is expressed as additive steps (``V3_COLUMNS`` + ``DDL_V3_TABLES``) on top of the v2 DDL, so a
+new database and an upgraded one go through exactly the same code (``migrations._migrate_2_to_3``).
 
 DuckDB limitation
 -----------------
@@ -41,7 +48,7 @@ constraints only on their immutable surrogate id; identity that must stay mutabl
 a watchlist can be renamed) is enforced by the single-writer repository inside a transaction instead.
 """
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # All timestamps are stored as naive UTC. DuckDB would otherwise convert ``current_timestamp`` using the
 # session time zone, which on a user's machine is local time.
@@ -62,6 +69,7 @@ TABLES = (
     "securities",
     "financial_facts",
     "price_daily",
+    "market_quotes",
     "filings",
     "earnings",
     "ownership",
@@ -76,6 +84,39 @@ META_TABLE = "schema_meta"
 # Tables whose key changed in v2. They had no write path in v1, so they are empty and can be recreated.
 V2_RECREATED_TABLES = ("financial_facts", "earnings", "ownership", "events")
 V1_OBSOLETE_SEQUENCES = ("seq_fact_id", "seq_earnings_id", "seq_ownership_id", "seq_event_id")
+
+
+# v3 additions (table, column, definition). Applied with ADD COLUMN IF NOT EXISTS, so re-running is harmless.
+# Why each exists: docs/data_coverage.yaml ``source_evidence_model`` (S1-S3) and ``schema_gaps`` (G1, G6, G7).
+V3_COLUMNS = (
+    ("sources", "command", "VARCHAR"),  # S1: endpoint or OpenBB command, e.g. 'obb.cboe.equity.historical'
+    ("sources", "parameters", "VARCHAR"),  # S1: JSON text of the arguments (sorted keys)
+    ("sources", "provider_version", "VARCHAR"),  # S2: e.g. 'openbb-cboe 2.0.0'
+    ("sources", "as_of", "TIMESTAMP"),  # S3: the provider's own timestamp of the data (naive UTC); NULL = unknown
+    ("sources", "is_fallback", "BOOLEAN DEFAULT FALSE"),  # TRUE when a fallback source replaced the primary one
+    ("financial_facts", "frame", "VARCHAR"),  # G7: SEC frame label (CY2025Q4I) of the point, NULL when none
+    ("ownership", "transaction_price", "DOUBLE"),  # G1
+    ("ownership", "shares_owned_after", "DOUBLE"),
+    ("ownership", "acquired_disposed", "VARCHAR"),  # 'A' / 'D' (validated by the record model)
+    ("ownership", "is_derivative", "BOOLEAN"),
+    ("ownership", "security_title", "VARCHAR"),
+    ("ownership", "ownership_nature", "VARCHAR"),  # 'D' direct / 'I' indirect
+    ("ownership", "is_10b5_1", "BOOLEAN"),  # NULL = not exposed by the provider
+    ("securities", "sector_source", "VARCHAR"),  # G6: system that produced sector AND industry ('nasdaq')
+    ("securities", "sic_source", "VARCHAR"),  # G6: system that produced sic ('sec')
+)
+DDL_V3_TABLES = {
+    "market_quotes": """CREATE TABLE IF NOT EXISTS market_quotes (
+        security_id BIGINT NOT NULL REFERENCES securities(security_id),
+        quote_date  DATE NOT NULL,               -- the provider's own as-of date, not the retrieval date
+        last_price  DOUBLE,
+        market_cap  DOUBLE,                      -- provider figure for THIS listing: price x all issuer shares
+        year_high   DOUBLE,                      -- provider's published 52-week high (cross-check only)
+        year_low    DOUBLE,
+        source_id   BIGINT REFERENCES sources(source_id),
+        PRIMARY KEY (security_id, quote_date)
+    )""",
+}
 
 
 def _cik(col: str = "cik", *, required: bool = False) -> str:

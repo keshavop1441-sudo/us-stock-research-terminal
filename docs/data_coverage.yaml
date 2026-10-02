@@ -148,8 +148,8 @@ sec_provenance:
     fy: {record_field: "financial_facts.fiscal_year"}
     fp: {record_field: "financial_facts.fiscal_period", note: "FY, Q1-Q3"}
     accn: {record_field: "financial_facts.accession_no", note: "part of the business key: vintages stay separate rows"}
-    frame: {record_field: "NONE YET (schema gap G7)", note: "kept on RawFactPoint; add nullable financial_facts.frame before Phase 3 loading"}
-    source_reference: {record_field: "sources.url + sources.command/parameters (gap S1)", note: "deterministic: RawFactPoint.source_ref = companyfacts URL + #taxonomy/concept/unit; filing_url derived from the accession number"}
+    frame: {record_field: "financial_facts.frame", note: "stored since schema v3 (gap G7 closed in Phase 3A); NULL when the point carries no frame"}
+    source_reference: {record_field: "sources.url + sources.command/parameters (schema v3)", note: "deterministic: RawFactPoint.source_ref = companyfacts URL + #taxonomy/concept/unit; filing_url derived from the accession number"}
   implementation: "app/models/sec_facts.py (RawFactPoint, parse_companyfacts_point: unknown keys rejected, instants preserved, frame never dropped silently); tests/test_sec_provenance.py."
   rules:
     - "Every ingested accounting fact row must have source_id, accession_no, filed_date and form (service-level check; SEC-sourced rows without an accession are rejected)."
@@ -1778,21 +1778,25 @@ source_evidence_model:
       proof: "Same command gave different data per parameter: pit_mode, period, limit, symbol spelling (BRK.B ok / BRK-B 403), Nasdaq narrow date window empty."
       stopgap_today: "JSON in sources.detail (tested in tests/test_evidence_model.py)."
       change: "sources.command VARCHAR, sources.parameters VARCHAR (JSON text)."
+      status: "APPLIED in schema v3 (Phase 3A); every retrieval written by the P0 pipeline fills both."
       required_before_phase3: true
     - id: S2_provider_version
       need: "OpenBB core and extension versions that produced the rows."
       proof: "Field names and standardisation are version specific (V5 openbb-sec 2.0.0 fields such as net_income_to_common)."
       change: "sources.provider_version VARCHAR."
+      status: "APPLIED in schema v3; filled for OpenBB retrievals ('openbb-cboe 2.0.0'), NULL for direct SEC HTTP (no versioned client)."
       required_before_phase3: true
     - id: S3_provider_as_of
       need: "The provider-reported timestamp of the data, separate from retrieved_at."
       proof: "Cboe quote last_timestamp 2026-10-01T15:59:59; Nasdaq last_timestamp date; both retrieved 2026-10-02."
       change: "sources.as_of TIMESTAMP (naive UTC, NULL when unknown)."
+      status: "APPLIED in schema v3; filled for Nasdaq quotes (last_timestamp), NULL where the provider states none (SEC documents, history)."
       required_before_phase3: true
     - id: S4_source_required_on_ingested_rows
       need: "Ingested rows must name their retrieval."
       proof: "source_id is nullable on every fact table; an ingestion service must reject NULL for provider data."
       change: "No DDL; enforce in the ingestion service."
+      status: "ENFORCED: the P0 pipeline records a source row before writing and checks it (QualityRepository.integrity_report: *_without_source = 0)."
       required_before_phase3: true
     - id: S5_license
       need: "Per-provider licence note."
@@ -1806,16 +1810,19 @@ schema_gaps:
     need: "transaction_price, shares_owned_after, acquired_disposed (A/D), is_derivative, security_title, ownership_nature (D/I), is_10b5_1 (nullable)."
     proof: "Live SEC insider rows carry price, securities_owned, acquisition_or_disposition, security_type, ownership_type; transaction_value is always null; 14 of 24 AAPL rows were derivative; raw XML carries aff10b5One."
     required_before: "insider ingestion (not before Phase 3 starts)"
+    status: "APPLIED in schema v3 (columns + OwnershipRecord fields); no insider data is ingested in P0."
   - id: G2_price_adjustment_meaning
     table: price_daily
     need: "adj_close stays NULL (providers are split-adjusted only); document that close is split-adjusted as of the retrieval; refresh must detect re-basing."
     proof: "Cboe == Nasdaq closes on shared dates for MSFT and KO."
     required_before: "price ingestion"
+    status: "ENFORCED: adj_close is always NULL (market_normalize) and checked (adjusted_close_populated = 0); split re-base detection is reported by the price stage."
   - id: G3_listing_identity
     table: securities
     need: "No new table now. share-class label and ticker history need either columns (share_class, valid_from, valid_to) or a history table, decided when ingestion starts; the SEC map is a snapshot so history accrues only from first ingestion."
     proof: "ticker_history UNAVAILABLE; GOOGL has four tickers under one CIK."
     required_before: "universe seeding"
+    status: "DECIDED for P0, no schema change: listings of one issuer are grouped by CIK; the designated primary listing is fixed in app/ingestion/manifest.py; no share_class/valid_from columns and no ticker history are stored (UNAVAILABLE from providers)."
   - id: G4_government_awards
     table: "new (not created)"
     need: "awards table keyed (generated_unique_award_id, modification_number) plus an issuer alias table (UEI/name -> cik)."
@@ -1826,11 +1833,13 @@ schema_gaps:
     need: "securities.sector/industry must hold Nasdaq's raw strings and securities.sic the SEC code, with the source recorded (a classification_source value or the provider on the retrieval); no converted values in those columns."
     proof: "Nasdaq and SEC classifications differ for the same issuer (QCOM 3663 vs 'Radio And Television Broadcasting...'; META/GOOGL 7370 vs 'Computer Software: Programming Data Processing')."
     required_before: "universe seeding"
+    status: "APPLIED in schema v3: securities.sector_source (system of sector AND industry, 'nasdaq') and securities.sic_source ('sec')."
   - id: G7_fact_frame
     table: financial_facts
     need: "nullable `frame` VARCHAR column (SEC frame label such as CY2025Q4I) so the one provenance field the table cannot hold today is stored."
     proof: "Raw companyfacts points carry frame (live keys accn,end,filed,form,fp,frame,fy,start,val); FinancialFactRecord has no such field (tests/test_sec_provenance.py)."
     required_before: "SEC facts ingestion"
+    status: "APPLIED in schema v3 (financial_facts.frame, FinancialFactRecord.frame)."
   - id: G5_filings_items
     table: filings
     need: "No change: 8-K items become events rows (source_ref = accession + item); acceptance_datetime not needed for day-level point-in-time."
@@ -1855,3 +1864,43 @@ representative_companies:
   ATVI: "Discontinued (acquired 2023)."
   JPM: "company_type financial: different statement template."
   TSLA: "Amendments scan (10-K/A 2025 and 2026)."
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Phase 3A: the P0 ingestion pilot (14 securities). Methodology and status; results are in the pilot report, not here.
+# ---------------------------------------------------------------------------------------------------------------------
+p0_pilot:
+  purpose: "Prove the production ingestion architecture end to end on a very small representative set. Not a screener, not P1."
+  code: "scripts/run_p0.py (live) ; tests/p0_rehearsal.py (simulated, mechanics only) ; app/ingestion/* ; app/services/ingestion_service.py"
+  schema_version_required: 3
+  manifest:
+    selection: "Hand-chosen from the Phase 2 probe evidence and pinned (app/ingestion/manifest.py, digest tested). Deliberately wider than the YAML P0 stage (5-10 symbols) because the brief asks for ten-plus coverage categories."
+    securities: [AAPL, NVDA, AMD, GOOGL, GOOG, BRK-B, META, RIVN, PTON, KOSS, COST, JPM, TSM, TSLA]
+    issuers: 13
+    deviation_from_phase2_p0: "TWTR (discontinued issuer with no ticker) is not in the set: the pipeline resolves identity from the SEC ticker map, in which a retired ticker does not exist. Discontinued issuers need a CIK-keyed entry path that P0 does not build."
+  stages: [identity, prices, quotes, sec_facts, validation, derived_metrics]
+  sources:
+    identity_and_filings: "SEC company_tickers_exchange.json + submissions (direct HTTP, SEC_USER_AGENT)"
+    accounting_facts: "SEC companyfacts (direct HTTP) - canonical; OpenBB statements are not ingested"
+    prices: "obb.cboe.equity.historical (primary), obb.nasdaq.equity.historical (fallback, stored with sources.is_fallback = TRUE)"
+    quote_market_cap_classification: "obb.nasdaq.equity.quote (last price, market_cap, year high/low, raw sector/industry). No fallback exists for market cap: a failure leaves issuer_market_cap MISSING_INPUT."
+  concurrency: "One writer lock and one transaction for the whole run (the refresh process holds the lock). A fetch/normalise failure of one symbol is recorded and skipped; a database error rolls the whole run back."
+  tag_selection:
+    rule: "app/models/concepts.py: per period the first candidate tag that reports it wins; a lower-priority tag with a >1% different value for the same period makes the line unreliable (TAG_CONFLICT -> MISSING_INPUT). No tag is trusted blindly and no value is guessed."
+    live_probed_in_phase_2: [RevenueFromContractWithCustomerExcludingAssessedTax, Revenues, SalesRevenueNet, PaymentsToAcquirePropertyPlantAndEquipment, NetCashProvidedByUsedInOperatingActivities, EarningsPerShareDiluted, NetIncomeLoss, ProfitLoss, LongTermDebtNoncurrent, LongTermDebt, EntityCommonStockSharesOutstanding]
+    not_probed_individually: [GrossProfit, OperatingIncomeLoss, StockholdersEquity, CashAndCashEquivalentsAtCarryingValue, Cash, ShortTermInvestments, MarketableSecuritiesCurrent, ShortTermBorrowings, LongTermDebtCurrent, WeightedAverageNumberOfDilutedSharesOutstanding, RevenueFromContractWithCustomerIncludingAssessedTax]
+    finding: "Phase 2 recorded candidate tags in a probe script and an OpenBB-field-to-concept dictionary, not an executable 'tested tag selection logic'. The selection above is new in Phase 3A; its tags outside live_probed_in_phase_2 are NOT_VERIFIED until the P0 live report shows them."
+    net_income: "NetIncomeLoss only (attributable to the parent). ProfitLoss is never a fallback and is not stored."
+    capex: "PaymentsToAcquirePropertyPlantAndEquipment only; absent -> FCF MISSING_INPUT."
+    debt: "ShortTermBorrowings + LongTermDebtCurrent + LongTermDebtNoncurrent at ONE balance-sheet date; any absent core line -> MISSING_INPUT; no explicit-no-debt evidence is ingested in P0, so a debt of 0 only arises from three explicitly reported zeros."
+  periods:
+    identification: "By the point's own start/end dates (period_kind), never by fy/fp, which describe the filing."
+    ttm: "latest fiscal year + current YTD - prior-year YTD, one tag, YTD aligned to the fiscal year by dates (+-7 days); latest report a 10-K -> that fiscal year; misaligned -> NOT_COMPARABLE; missing prior YTD -> MISSING_INPUT."
+    growth: "Fiscal-year growth uses ONE filing for both years (same_filing_pair). TTM growth uses current vintages per period, flags TTM_COMPONENTS_FROM_SEVERAL_FILINGS and is NOT_COMPARABLE if any component period was restated."
+    ttm_eps: "Sum of per-share periods (flagged PER_SHARE_SUM_OF_PERIODS) with a split guard on weighted diluted shares (ratio outside 0.55-1.8 -> NOT_COMPARABLE POSSIBLE_SPLIT_BASIS_CHANGE; counts missing -> MISSING_INPUT). No TTM share count is ever built."
+    restatements: "Each accession is its own row; amendments (10-K/A) are separate rows; the current view takes the latest filed vintage, a point-in-time read (StatementIndex.select as_of) the latest filed on or before the date. Only filing-date granularity is claimed (no acceptance time)."
+  market_cap: "issuer_market_cap = the quoted figure of the designated primary listing (GOOGL for Alphabet, BRK-B for Berkshire). security_market_cap is not created. Valuation divides it by issuer revenue."
+  idempotency: "Upserts classify every record as inserted / updated (values differ) / unchanged (not rewritten, keeps the source_id of its first retrieval) / duplicate (repeated key inside the batch). source_id is provenance, ignored when deciding 'changed'. sources is an append-only retrieval log and grows by one row per retrieval on a re-run by design."
+  not_in_p0: [insider_transactions, institutional_holders, earnings, news, events, government_awards, splits_and_dividends, security_type, share_class, ticker_history, discontinued_issuers]
+  live_status:
+    development_sandbox: "NOT_RUN. The sandbox cannot reach SEC, Nasdaq or Cboe (egress policy) and SEC_USER_AGENT is not set there. No live P0 result exists from the sandbox; no metric is LIVE_VERIFIED by Phase 3A."
+    how_to_run: "python scripts/run_p0.py with SEC_USER_AGENT set (or the manual workflow .github/workflows/p0-ingestion.yml with the repository variable SEC_USER_AGENT)."

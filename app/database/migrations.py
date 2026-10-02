@@ -6,12 +6,14 @@ from app.database.errors import MigrationError, SchemaVersionError
 from app.database.schema import (
     DDL,
     DDL_V2_TABLES,
+    DDL_V3_TABLES,
     META_TABLE,
     NOW_UTC,
     SCHEMA_VERSION,
     TIMESTAMP_DEFAULT_COLUMNS,
     V1_OBSOLETE_SEQUENCES,
     V2_RECREATED_TABLES,
+    V3_COLUMNS,
 )
 
 
@@ -49,8 +51,22 @@ def _migrate_1_to_2(con: duckdb.DuckDBPyConnection) -> None:
         con.execute(f"ALTER TABLE {table} ALTER COLUMN {column} SET DEFAULT {NOW_UTC}")
 
 
+def _migrate_2_to_3(con: duckdb.DuckDBPyConnection) -> None:
+    """v3 (Phase 3A): provenance columns on ``sources``, ``financial_facts.frame``, ownership transaction detail,
+    classification provenance on ``securities`` and the ``market_quotes`` table. Purely additive: no row is touched.
+
+    Tables are altered in place (DuckDB allows ADD COLUMN on foreign-key-referenced tables); NULL means "not recorded".
+    """
+    for table, column, definition in V3_COLUMNS:
+        con.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {definition}")
+    for ddl in DDL_V3_TABLES.values():
+        con.execute(ddl)
+
+
 # from-version -> function upgrading to from-version + 1
-MIGRATIONS = {1: _migrate_1_to_2}
+MIGRATIONS = {1: _migrate_1_to_2, 2: _migrate_2_to_3}
+# A new database is created at this version (the v2 DDL) and then walked up through the same steps as an upgrade.
+_DDL_VERSION = 2
 
 
 def apply_schema(con: duckdb.DuckDBPyConnection) -> int:
@@ -65,9 +81,9 @@ def apply_schema(con: duckdb.DuckDBPyConnection) -> int:
         if version is None:
             for statement in DDL:
                 con.execute(statement)
-        else:
-            for from_version in range(version, SCHEMA_VERSION):
-                MIGRATIONS[from_version](con)
+            version = _DDL_VERSION
+        for from_version in range(version, SCHEMA_VERSION):
+            MIGRATIONS[from_version](con)
         con.execute(
             f"INSERT INTO {META_TABLE} VALUES ('schema_version', ?) "
             "ON CONFLICT (key) DO UPDATE SET value = excluded.value",
