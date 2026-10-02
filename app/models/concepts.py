@@ -79,8 +79,15 @@ SPECS: tuple[ConceptSpec, ...] = (
     ),  # fmt: skip
     ConceptSpec("cash", US_GAAP, ("CashAndCashEquivalentsAtCarryingValue", "Cash"), "USD", "instant"),
     ConceptSpec(
-        "short_term_investments", US_GAAP, ("ShortTermInvestments", "MarketableSecuritiesCurrent"), "USD", "instant"
-    ),
+        "short_term_investments",
+        US_GAAP,
+        ("ShortTermInvestments", "MarketableSecuritiesCurrent", "DebtSecuritiesCurrent"),
+        "USD",
+        "instant",
+        "DebtSecuritiesCurrent = current marketable DEBT securities (NVIDIA 2026-07-26 10-Q: 34.143B, matches the "
+        "balance sheet). Marketable EQUITY securities (e.g. MarketableSecuritiesEquity*/EquitySecuritiesFvNi) are not "
+        "short-term investments for net debt and are deliberately NOT mapped",
+    ),  # fmt: skip
     ConceptSpec(
         "short_term_debt",
         US_GAAP,

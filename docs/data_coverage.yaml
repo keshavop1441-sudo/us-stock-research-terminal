@@ -1050,7 +1050,7 @@ metrics:
     negative_data_behavior: "n/a"
     restatement_behavior: *sec_vintage
     status: LIVE_VERIFIED
-    fallback: "raw XBRL CashAndCashEquivalentsAtCarryingValue, ShortTermInvestments."
+    fallback: "raw XBRL CashAndCashEquivalentsAtCarryingValue, ShortTermInvestments, else MarketableSecuritiesCurrent, else DebtSecuritiesCurrent (current marketable debt securities; NVDA 2026-07-26 10-Q accession 0001045810-26-000075 reported 34.143B live-verified from CompanyFacts). Marketable equity securities are NOT mapped."
     limitations: "Long-term marketable securities (large at AAPL/MSFT) are not included, so net debt is conservative."
     sample_tested: {live: true, evidence: [E_LIVE_R2], symbols: [AAPL, RIVN, KOSS, BRK-B]}
 

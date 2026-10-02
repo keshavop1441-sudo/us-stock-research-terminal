@@ -240,3 +240,63 @@ def test_every_catalogued_ttm_metric_points_at_its_composition_lines():
     assert CATALOG["diluted_eps_ttm"].lines == ("_ttm_diluted_eps",)
     assert CATALOG["price_to_sales_ttm"].lines == ("_ttm_revenue",)
     assert CATALOG["price_to_earnings"].lines == ("_ttm_diluted_eps",)
+
+
+# --- short-term investments: DebtSecuritiesCurrent (NVIDIA-style current marketable debt securities) -----------------
+
+
+def sti_facts(tag, q1=34.143e9, fy25=30e9, fy24=25e9):
+    return (
+        instant(tag, Q1, q1, KQ, D(2026, 1, 30), "10-Q"),
+        instant(tag, FY25, fy25, K25, D(2025, 10, 31)),
+        instant(tag, FY24, fy24, K25, D(2025, 10, 31)),
+    )
+
+
+def test_debt_securities_current_is_a_short_term_investments_candidate_and_no_equity_concept_is():
+    assert SPEC_BY_LINE["short_term_investments"].tags == (
+        "ShortTermInvestments",
+        "MarketableSecuritiesCurrent",
+        "DebtSecuritiesCurrent",
+    )
+    assert SPEC_BY_TAG[("us-gaap", "DebtSecuritiesCurrent")].line == "short_term_investments"
+    for equity_tag in ("EquitySecuritiesFvNi", "MarketableSecuritiesEquitySecurities", "EquitySecuritiesFvNiCurrent"):
+        assert ("us-gaap", equity_tag) not in SPEC_BY_TAG, equity_tag
+
+
+def test_debt_securities_current_is_used_when_the_other_candidates_are_absent():
+    out, lines, _ = run(sti_facts("DebtSecuritiesCurrent"))
+    rec = lines["short_term_investments"]
+    assert (rec["tag"], rec["value"], rec["accession"], rec["form"], rec["period_end"]) == (
+        "DebtSecuritiesCurrent", 34.143e9, KQ, "10-Q", "2025-12-27")  # fmt: skip
+    # net debt = debt 97 - (cash 28 + investments 34.143): the investments are subtracted, no ASSUMED_ZERO flag
+    assert out["net_debt"].value == pytest.approx(97e9 - (28e9 + 34.143e9))
+    assert "ASSUMED_ZERO:short_term_investments" not in out["net_debt"].flags
+    assert out["total_debt"].value == pytest.approx(97e9)  # debt aggregation untouched
+
+
+def test_existing_investment_tags_still_win_and_conflicts_are_still_detected():
+    out, lines, _ = run(sti_facts("ShortTermInvestments", q1=20e9, fy25=20e9, fy24=20e9))
+    assert lines["short_term_investments"]["tag"] == "ShortTermInvestments"
+    assert out["net_debt"].value == pytest.approx(97e9 - 48e9)
+    agree, lines, _ = run(
+        (*sti_facts("ShortTermInvestments", 20e9, 20e9, 20e9), *sti_facts("DebtSecuritiesCurrent", 20e9, 20e9, 20e9))
+    )
+    assert lines["short_term_investments"]["tag"] == "ShortTermInvestments"
+    assert "CONFIRMED_BY:DebtSecuritiesCurrent" in lines["short_term_investments"]["flags"]
+    clash, _, _ = run(
+        (
+            *sti_facts("MarketableSecuritiesCurrent", 20e9, 20e9, 20e9),
+            *sti_facts("DebtSecuritiesCurrent", 34e9, 34e9, 34e9),
+        )
+    )
+    assert clash["net_debt"].state is MetricState.MISSING_INPUT and clash["net_debt"].reason.startswith(
+        "CASH_TAG_CONFLICT"
+    )
+
+
+def test_an_equity_security_fact_is_not_taken_as_a_short_term_investment():
+    out, lines, _ = run(sti_facts("EquitySecuritiesFvNi", 42.783e9))
+    assert lines["short_term_investments"] == {"value": None, "reason": "NOT_REPORTED"}
+    assert "ASSUMED_ZERO:short_term_investments" in out["net_debt"].flags
+    assert out["net_debt"].value == pytest.approx(97e9 - 28e9)
