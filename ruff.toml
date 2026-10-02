@@ -1,0 +1,14 @@
+line-length = 120
+target-version = "py314"
+
+[lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM"]
+# UP037 would unquote self-referencing annotations. That only works with Python 3.14's lazy annotations and
+# would make the code unimportable on 3.13 (used by some cloud sandboxes). 3.14 stays the supported target.
+ignore = ["UP037"]
+
+[lint.per-file-ignores]
+"app/main.py" = ["E402"]
+"scripts/*.py" = ["E402"]
+# Audit tool (not application code): dense one-line probe declarations are easier to review than wrapped ones.
+"scripts/audit/*.py" = ["E402", "E501", "S314"]

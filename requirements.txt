@@ -1,0 +1,28 @@
+# US Stock Research Terminal - DIRECT runtime dependencies, exactly pinned.
+# Target interpreter: Python 3.14 (see .python-version).
+#
+# Reproducible installs use requirements.lock, which pins every transitive dependency with hashes for all
+# platforms (Windows/Linux/macOS) on Python 3.14. To change a dependency: edit the pin here, then run
+#     uv pip compile requirements.txt --universal --python-version 3.14 --generate-hashes -o requirements.lock
+# (CI fails if requirements.lock is out of date.)  Install with:
+#     pip install --require-hashes -r requirements.lock
+#
+# OpenBB V5 = openbb-core 2.x plus 2.x provider/router extensions. Only the extensions needed are installed,
+# NOT the full `openbb` meta-package. Note: openbb-core and openbb-sec pull in fastapi, uvicorn, fastmcp and
+# openbb-platform-api transitively; this project does not use them.
+openbb-core==2.0.1
+openbb-sec==2.0.0
+openbb-nasdaq==2.0.0
+openbb-cboe==2.0.0
+openbb-news==2.0.0
+
+streamlit==1.64.0
+duckdb==1.5.6
+polars==1.44.2
+plotly==7.1.0
+pydantic==2.13.5
+python-dotenv==1.2.4
+httpx==0.28.1
+filelock==4.0.8   # cross-process single-writer lock (fcntl on POSIX, msvcrt on Windows)
+# pandas/pyarrow are installed transitively by Streamlit; this project imports neither
+# (DuckDB results are converted to Polars without them - see app/database/frames.py).

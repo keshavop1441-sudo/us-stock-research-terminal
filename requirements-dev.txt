@@ -1,0 +1,5 @@
+# Development/test dependencies, exactly pinned. Locked in requirements-dev.lock (same procedure as requirements.txt).
+-r requirements.txt
+pytest==9.1.1
+ruff==0.16.10
+PyYAML==6.0.3

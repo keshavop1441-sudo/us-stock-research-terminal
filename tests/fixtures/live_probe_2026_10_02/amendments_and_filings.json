@@ -1,0 +1,60 @@
+{
+ "_probe": "ownership_events sec.amendment_scan, sec.filings.* (run 36954761165)",
+ "ten_k_a": [
+  {
+   "ticker": "AMD",
+   "cik": "0000002488",
+   "form": "10-K/A",
+   "filing_date": "2026-02-04",
+   "accession": "0000002488-26-000021"
+  },
+  {
+   "ticker": "TSLA",
+   "form": "10-K/A",
+   "filing_date": "2026-04-30",
+   "accession": "0001104659-26-053166"
+  },
+  {
+   "ticker": "TSLA",
+   "form": "10-K/A",
+   "filing_date": "2025-04-30",
+   "accession": "0001104659-25-042659"
+  }
+ ],
+ "aapl_10k": {
+  "filing_date": "2025-10-31",
+  "report_date": "2025-09-27",
+  "report_type": "10-K",
+  "accession_number": "0000320193-25-000079",
+  "is_xbrl": "1"
+ },
+ "old_google_10ka": {
+  "cik": "0001288776",
+  "filing_date": "2016-03-29",
+  "report_date": "2015-12-31",
+  "report_type": "10-K/A",
+  "accession_number": "0001193125-16-520367"
+ },
+ "form_type_filter_rejects": [
+  "10-K/A",
+  "10-Q/A"
+ ],
+ "filing_columns": [
+  "filing_date",
+  "report_date",
+  "report_type",
+  "accession_number",
+  "primary_doc",
+  "primary_doc_description",
+  "items",
+  "is_xbrl",
+  "report_url"
+ ],
+ "client_side_amended_forms_AAPL": [
+  "8-K/A",
+  "SCHEDULE 13G/A",
+  "144/A",
+  "SC 13G/A"
+ ],
+ "_recorded": "2026-10-02 (GitHub-hosted runner, UTC ~02:15-02:25)"
+}

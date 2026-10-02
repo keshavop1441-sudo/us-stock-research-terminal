@@ -1,0 +1,97 @@
+{
+ "_probe": "connect_identity sec.submissions.*, sec.company_tickers_exchange (run 36954761165)",
+ "submissions": {
+  "AAPL": {
+   "cik": "0000320193",
+   "tickers": [
+    "AAPL"
+   ],
+   "fiscalYearEnd": "0926",
+   "sic": "3571"
+  },
+  "GOOGL": {
+   "cik": "0001652044",
+   "tickers": [
+    "GOOGL",
+    "GOOG",
+    "GOOGM",
+    "GOOGN"
+   ],
+   "fiscalYearEnd": null
+  },
+  "BRK-B": {
+   "cik": "0001067983",
+   "tickers": [
+    "BRK-B",
+    "BRK-A"
+   ],
+   "exchanges": [
+    "NYSE",
+    "NYSE"
+   ],
+   "fiscalYearEnd": "1231"
+  },
+  "META": {
+   "cik": "0001326801",
+   "tickers": [
+    "META"
+   ],
+   "formerNames": [
+    {
+     "name": "Facebook Inc",
+     "from": "2005-05-06T04:00:00.000Z",
+     "to": "2021-10-27T04:00:00.000Z"
+    }
+   ]
+  },
+  "TWTR": {
+   "cik": "0001418091",
+   "tickers": [],
+   "note": "acquired 2022; last filing 2022-12-02"
+  },
+  "ATVI": {
+   "cik": "0000718877",
+   "tickers": []
+  },
+  "NVDA": {
+   "cik": "0001045810",
+   "tickers": [
+    "NVDA"
+   ],
+   "fiscalYearEnd": "0131"
+  },
+  "COST": {
+   "cik": "0000909832",
+   "fiscalYearEnd": "0830"
+  },
+  "PTON": {
+   "cik": "0001639825",
+   "fiscalYearEnd": "0630"
+  }
+ },
+ "company_tickers_exchange_lookup": {
+  "BRK-B": [
+   1067983,
+   "NYSE"
+  ],
+  "BRK.B": null,
+  "FB": null,
+  "TWTR": null,
+  "ATVI": null,
+  "GOOG": [
+   1652044,
+   "Nasdaq"
+  ],
+  "GOOGL": [
+   1652044,
+   "Nasdaq"
+  ]
+ },
+ "nasdaqtrader_security_names": {
+  "GOOG": "Alphabet Inc. - Class C Capital Stock",
+  "GOOGL": "Alphabet Inc. - Class A Common Stock",
+  "META": "Meta Platforms, Inc. - Class A Common Stock"
+ },
+ "_note": "fiscalYearEnd of GOOGL not captured in the log excerpt (None means not recorded, not absent).",
+ "_recorded": "2026-10-02 (GitHub-hosted runner, UTC ~02:15-02:25)"
+}

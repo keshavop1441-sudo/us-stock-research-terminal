@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: tests (${{ matrix.os }}, Python 3.14)
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements-dev.lock
+      - name: Install locked dependencies
+        run: python -m pip install --require-hashes -r requirements-dev.lock
+      - name: Lint
+        run: |
+          ruff check app tests scripts
+          ruff format --check app tests scripts
+      - name: Tests
+        run: python -m pytest -q
+
+  lock-freshness:
+    name: lock files are up to date
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Recompile locks and require no change
+        run: |
+          uv pip compile requirements.txt --universal --python-version 3.14 --generate-hashes -o requirements.lock
+          uv pip compile requirements-dev.txt --universal --python-version 3.14 --generate-hashes -o requirements-dev.lock
+          git diff --exit-code requirements.lock requirements-dev.lock
+
+  minimal-environment:
+    name: DuckDB->Polars conversion with only duckdb + polars installed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: Install ONLY duckdb and polars (pinned as in requirements.txt)
+        run: |
+          python -m venv /tmp/minimal
+          /tmp/minimal/bin/python -m pip install $(grep -E '^(duckdb|polars)==' requirements.txt | cut -d' ' -f1)
+          /tmp/minimal/bin/python -m pip list
+      - name: Run the standalone conversion check
+        run: /tmp/minimal/bin/python tests/minimal_frames_check.py
+
+  windows-scripts:
+    name: Windows batch scripts (real Windows, Python 3.14)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: START_TERMINAL.bat /setup-only (creates .venv, installs lock, creates database)
+        shell: cmd
+        run: START_TERMINAL.bat /setup-only
+      - name: Second run is idempotent (reuses .venv, no reinstall)
+        shell: cmd
+        run: START_TERMINAL.bat /setup-only
+      - name: Broken install recovery (marker removed, next run reinstalls and verifies)
+        shell: cmd
+        run: |
+          del .venv\.deps_installed
+          START_TERMINAL.bat /setup-only
+      - name: START_TERMINAL.bat /smoke (Streamlit starts and answers its health check)
+        shell: cmd
+        run: START_TERMINAL.bat /smoke
+      - name: UPDATE_DATA.bat /nopause (OpenBB check + single-writer lock)
+        shell: cmd
+        run: UPDATE_DATA.bat /nopause

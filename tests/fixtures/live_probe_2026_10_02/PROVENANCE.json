@@ -1,0 +1,144 @@
+{
+ "nvda_eps_vintage.json": {
+  "kind": "transcribed from PROBE log lines of the read-only audit probe (scripts/audit/probe_providers.py), values unmodified, fields trimmed",
+  "evidence_run": {
+   "run": 36955401657,
+   "job": 110677142848,
+   "sha": "2be976b3e9c5151c7edef56fb6fcddd5f30f0f8f",
+   "group": "followup"
+  },
+  "probe_ids": "followup.nvda_split.pit_False / pit_True",
+  "licence_note": "public market/regulatory data; no personal data retained (insider names omitted)"
+ },
+ "rivn_net_income.json": {
+  "kind": "transcribed from PROBE log lines of the read-only audit probe (scripts/audit/probe_providers.py), values unmodified, fields trimmed",
+  "evidence_run": [
+   {
+    "run": 36954761165,
+    "sha": "bab0870399df1d03de90daa81db8f7f7ba935243"
+   },
+   {
+    "run": 36955401657,
+    "job": 110677142848,
+    "sha": "2be976b3e9c5151c7edef56fb6fcddd5f30f0f8f",
+    "group": "followup"
+   }
+  ],
+  "probe_ids": "followup.net_income.RIVN",
+  "licence_note": "public market/regulatory data; no personal data retained (insider names omitted)"
+ },
+ "brkb_statements.json": {
+  "kind": "transcribed from PROBE log lines of the read-only audit probe (scripts/audit/probe_providers.py), values unmodified, fields trimmed",
+  "evidence_run": [
+   {
+    "run": 36954761165,
+    "sha": "bab0870399df1d03de90daa81db8f7f7ba935243"
+   },
+   {
+    "run": 36955401657,
+    "job": 110677142848,
+    "sha": "2be976b3e9c5151c7edef56fb6fcddd5f30f0f8f",
+    "group": "followup"
+   }
+  ],
+  "probe_ids": "followup.meta.BRK-B + fundamentals sec.balance.BRK-B.annual (run 36954761165)",
+  "licence_note": "public market/regulatory data; no personal data retained (insider names omitted)"
+ },
+ "company_types.json": {
+  "kind": "transcribed from PROBE log lines of the read-only audit probe (scripts/audit/probe_providers.py), values unmodified, fields trimmed",
+  "evidence_run": {
+   "run": 36955401657,
+   "job": 110677142848,
+   "sha": "2be976b3e9c5151c7edef56fb6fcddd5f30f0f8f",
+   "group": "followup"
+  },
+  "probe_ids": "followup.meta.*",
+  "licence_note": "public market/regulatory data; no personal data retained (insider names omitted)"
+ },
+ "multiclass_quotes.json": {
+  "kind": "transcribed from PROBE log lines of the read-only audit probe (scripts/audit/probe_providers.py), values unmodified, fields trimmed",
+  "evidence_run": {
+   "run": 36955401657,
+   "job": 110677142848,
+   "sha": "2be976b3e9c5151c7edef56fb6fcddd5f30f0f8f",
+   "group": "followup"
+  },
+  "probe_ids": "followup.quote_nasdaq.*",
+  "licence_note": "public market/regulatory data; no personal data retained (insider names omitted)"
+ },
+ "dei_shares.json": {
+  "kind": "transcribed from PROBE log lines of the read-only audit probe (scripts/audit/probe_providers.py), values unmodified, fields trimmed",
+  "evidence_run": {
+   "run": 36955401657,
+   "job": 110677142848,
+   "sha": "2be976b3e9c5151c7edef56fb6fcddd5f30f0f8f",
+   "group": "followup"
+  },
+  "probe_ids": "followup.dei_shares.*",
+  "licence_note": "public market/regulatory data; no personal data retained (insider names omitted)"
+ },
+ "aapl_ttm_and_quarterly.json": {
+  "kind": "transcribed from PROBE log lines of the read-only audit probe (scripts/audit/probe_providers.py), values unmodified, fields trimmed",
+  "evidence_run": [
+   {
+    "run": 36954761165,
+    "sha": "bab0870399df1d03de90daa81db8f7f7ba935243"
+   },
+   {
+    "run": 36955401657,
+    "job": 110677142848,
+    "sha": "2be976b3e9c5151c7edef56fb6fcddd5f30f0f8f",
+    "group": "followup"
+   }
+  ],
+  "probe_ids": "fundamentals sec.income.AAPL.ttm, sec.cashflow.AAPL.ttm (run 36954761165); followup.cashflow.AAPL.quarterly",
+  "licence_note": "public market/regulatory data; no personal data retained (insider names omitted)"
+ },
+ "week52_and_adjustment.json": {
+  "kind": "transcribed from PROBE log lines of the read-only audit probe (scripts/audit/probe_providers.py), values unmodified, fields trimmed",
+  "evidence_run": {
+   "run": 36954761165,
+   "sha": "bab0870399df1d03de90daa81db8f7f7ba935243"
+  },
+  "probe_ids": "market week52.*, divadj.*",
+  "licence_note": "public market/regulatory data; no personal data retained (insider names omitted)"
+ },
+ "insider_and_institutional.json": {
+  "kind": "transcribed from PROBE log lines of the read-only audit probe (scripts/audit/probe_providers.py), values unmodified, fields trimmed",
+  "evidence_run": {
+   "run": 36954761165,
+   "sha": "bab0870399df1d03de90daa81db8f7f7ba935243"
+  },
+  "probe_ids": "ownership_events insider.sec.AAPL, insider.nasdaq.AAPL, institutional.nasdaq.AAPL.all (run 36954761165)",
+  "licence_note": "public market/regulatory data; no personal data retained (insider names omitted)"
+ },
+ "amendments_and_filings.json": {
+  "kind": "transcribed from PROBE log lines of the read-only audit probe (scripts/audit/probe_providers.py), values unmodified, fields trimmed",
+  "evidence_run": {
+   "run": 36954761165,
+   "sha": "bab0870399df1d03de90daa81db8f7f7ba935243"
+  },
+  "probe_ids": "ownership_events sec.amendment_scan, sec.filings.* (run 36954761165)",
+  "licence_note": "public market/regulatory data; no personal data retained (insider names omitted)"
+ },
+ "identity.json": {
+  "kind": "transcribed from PROBE log lines of the read-only audit probe (scripts/audit/probe_providers.py), values unmodified, fields trimmed",
+  "evidence_run": {
+   "run": 36954761165,
+   "sha": "bab0870399df1d03de90daa81db8f7f7ba935243"
+  },
+  "probe_ids": "connect_identity sec.submissions.*, sec.company_tickers_exchange (run 36954761165)",
+  "licence_note": "public market/regulatory data; no personal data retained (insider names omitted)"
+ },
+ "taxonomy.json": {
+  "kind": "transcribed from PROBE log lines of the read-only audit probe (taxonomy group), values unmodified, fields trimmed",
+  "evidence_run": {
+   "run": 36957138239,
+   "sha": "778200026ab299942caeeaad5bae67b27fe5a66a",
+   "job": 110682502819,
+   "group": "taxonomy"
+  },
+  "probe_ids": "taxonomy.nasdaq_quote.*, taxonomy.nasdaq_profile.*, taxonomy.sec_sic.*, taxonomy.screener.* (run 36957138239, job 110682502819)",
+  "licence_note": "public market/regulatory data; no personal data retained"
+ }
+}

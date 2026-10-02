@@ -1,0 +1,79 @@
+{
+ "company_tickers_sample.json": {
+  "origin": "recorded real HTTP response, captured by the OpenBB project's test suite (NOT fetched by this project)",
+  "upstream_repo": "https://github.com/OpenBB-finance/OpenBB",
+  "upstream_commit": "6c292746fe9d109e4639c7d5d32a81030acfe0f8",
+  "cassette": "openbb_platform/providers/sec/tests/record/http/test_sec_fetchers/test_sec_company_filings_fetcher_urllib3_v2.yaml",
+  "request": "GET https://www.sec.gov/files/company_tickers.json",
+  "recorded_http_date": "Thu, 27 Jun 2024 10:15:05 GMT",
+  "status": 200,
+  "trimmed": "10,295 entries -> selected tickers + first 3",
+  "note": "current ticker->CIK map only; ordered by market cap"
+ },
+ "submissions_aapl_trimmed.json": {
+  "origin": "recorded real HTTP response, captured by the OpenBB project's test suite (NOT fetched by this project)",
+  "upstream_repo": "https://github.com/OpenBB-finance/OpenBB",
+  "upstream_commit": "6c292746fe9d109e4639c7d5d32a81030acfe0f8",
+  "cassette": "openbb_platform/providers/sec/tests/record/http/test_sec_fetchers/test_sec_company_filings_fetcher_urllib3_v2.yaml",
+  "request": "GET https://data.sec.gov/submissions/CIK0000320193.json",
+  "recorded_http_date": "Thu, 27 Jun 2024 10:15:05 GMT",
+  "status": 200,
+  "trimmed": "filings.recent 1001 rows -> first 8 + one row of each major form",
+  "note": "EDGAR submissions API for AAPL (CIK 0000320193)"
+ },
+ "frames_sample.json": {
+  "origin": "recorded real HTTP response, captured by the OpenBB project's test suite (NOT fetched by this project)",
+  "upstream_repo": "https://github.com/OpenBB-finance/OpenBB",
+  "upstream_commit": "6c292746fe9d109e4639c7d5d32a81030acfe0f8",
+  "cassette": "openbb_platform/providers/sec/tests/record/http/test_sec_fetchers/test_sec_compare_company_facts_fetcher_urllib3_v2.yaml",
+  "request": "GET https://data.sec.gov/api/xbrl/frames/us-gaap/PaymentsForRepurchaseOfCommonStock/USD/CY2023.json",
+  "recorded_http_date": "Mon, 01 Jul 2024 10:45:58 GMT",
+  "status": 200,
+  "trimmed": "2,271 data rows -> first 6",
+  "note": "XBRL frames API: one concept, all filers, one calendar period"
+ },
+ "form4_derivative_grant_aapl.xml": {
+  "origin": "recorded real HTTP response, captured by the OpenBB project's test suite (NOT fetched by this project)",
+  "upstream_repo": "https://github.com/OpenBB-finance/OpenBB",
+  "upstream_commit": "6c292746fe9d109e4639c7d5d32a81030acfe0f8",
+  "cassette": "openbb_platform/providers/sec/tests/record/http/test_sec_fetchers/test_sec_insider_trading_fetcher_urllib3_v2.yaml",
+  "request": "GET https://www.sec.gov/Archives/edgar/data/320193/000032019324000101/wk-form4_1727822082.xml",
+  "recorded_http_date": "Fri, 15 Nov 2024 22:36:07 GMT",
+  "status": 200,
+  "trimmed": "none (full document)",
+  "note": "Form 4 ownership XML"
+ },
+ "form4_sales_and_gift_aapl.xml": {
+  "origin": "recorded real HTTP response, captured by the OpenBB project's test suite (NOT fetched by this project)",
+  "upstream_repo": "https://github.com/OpenBB-finance/OpenBB",
+  "upstream_commit": "6c292746fe9d109e4639c7d5d32a81030acfe0f8",
+  "cassette": "openbb_platform/providers/sec/tests/record/http/test_sec_fetchers/test_sec_insider_trading_fetcher_urllib3_v2.yaml",
+  "request": "GET https://www.sec.gov/Archives/edgar/data/320193/000032019324000084/wk-form4_1723069808.xml",
+  "recorded_http_date": "Fri, 15 Nov 2024 22:36:09 GMT",
+  "status": 200,
+  "trimmed": "none (full document)",
+  "note": "Form 4 ownership XML"
+ },
+ "cboe_historical_aapl_sample.json": {
+  "origin": "recorded real HTTP response, captured by the OpenBB project's test suite (NOT fetched by this project)",
+  "upstream_repo": "https://github.com/OpenBB-finance/OpenBB",
+  "upstream_commit": "6c292746fe9d109e4639c7d5d32a81030acfe0f8",
+  "cassette": "openbb_platform/providers/cboe/tests/record/http/test_cboe_fetchers/test_cboe_equity_historical_fetcher_urllib3_v2.yaml",
+  "request": "GET https://cdn.cboe.com/api/global/delayed_quotes/charts/historical/AAPL.json",
+  "recorded_http_date": "Sat, 25 Jul 2026 21:25:39 GMT",
+  "status": 200,
+  "trimmed": "5,675 daily rows -> first 3, rows around three AAPL split dates, last 3",
+  "note": "Cboe delayed-quotes chart history for AAPL"
+ },
+ "form13f_nvidia_header.txt": {
+  "origin": "recorded real HTTP response, captured by the OpenBB project's test suite (NOT fetched by this project)",
+  "upstream_repo": "https://github.com/OpenBB-finance/OpenBB",
+  "upstream_commit": "6c292746fe9d109e4639c7d5d32a81030acfe0f8",
+  "cassette": "openbb_platform/providers/sec/tests/record/http/test_sec_fetchers/test_sec_form_13FHR_fetcher_urllib3_v2.yaml",
+  "request": "GET https://www.sec.gov/Archives/edgar/data/1045810/0001045810-24-000108.txt",
+  "recorded_http_date": "Thu, 27 Jun 2024 10:15:14 GMT",
+  "status": 200,
+  "trimmed": "none (first 1.9 KB of the complete-submission file)",
+  "note": "13F-HR submission header: filer is a 13F manager (here NVIDIA), not an issuer's holder list"
+ }
+}

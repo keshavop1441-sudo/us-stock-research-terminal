@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Secrets and local configuration - never commit
+.env
+.env.*
+!.env.example
+
+# Local data (DuckDB database, WAL files, caches, exports)
+data/*
+!data/.gitkeep
+*.duckdb
+*.duckdb.wal
+*.wal
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

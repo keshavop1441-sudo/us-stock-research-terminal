@@ -1,0 +1,1857 @@
+# Phase 2 data-source and metric coverage matrix. MACHINE-READABLE; validated by tests/test_data_coverage.py.
+# Human summary: docs/data_coverage.md. Executable rules: app/screening/metrics.py (tests/test_metrics.py).
+#
+# Controlled `status` values (one per metric entry):
+#   LIVE_VERIFIED      a live call from a GitHub-hosted runner returned this data (evidence ids + symbols in sample_tested)
+#   API_SHAPE_VERIFIED the installed provider code / `obb.reference` defines it, but no live sample was retrieved
+#   FIXTURE_VERIFIED   verified only against a recorded real response (upstream OpenBB cassette) at its recorded date
+#   NOT_VERIFIED       believed possible, not tested; treat as unknown
+#   UNAVAILABLE        no suitable source among the installed providers / free public endpoints
+#   DERIVED            computed locally from other metric entries (`inputs`); the rule is in `formula`, and where a
+#                      function exists `rule_function` names it in app.screening.metrics
+#
+# Honesty note: the development sandbox could not reach any provider (network policy). Every LIVE_VERIFIED claim comes from
+# the read-only probe (scripts/audit/probe_providers.py) running on GitHub Actions, evidence ids E_LIVE_*. Nothing was
+# verified on Windows or against a paid/keyed provider (none of the four installed providers needs a key).
+
+schema_version: 1
+audit_date: "2026-10-02"
+audit_scope: "Phase 2 audit only: nothing here is a production ingestion pipeline."
+
+statuses: [LIVE_VERIFIED, API_SHAPE_VERIFIED, FIXTURE_VERIFIED, NOT_VERIFIED, UNAVAILABLE, DERIVED]
+
+required_metric_fields:
+  - metric
+  - category
+  - canonical_definition
+  - source
+  - provider
+  - command
+  - identifier
+  - period
+  - direct_or_derived
+  - inputs
+  - formula
+  - missing_data_behavior
+  - negative_data_behavior
+  - restatement_behavior
+  - status
+  - fallback
+  - limitations
+  - sample_tested
+
+evidence:
+  E_LIVE_R1:
+    kind: live
+    description: "First probe run. Showed SEC returns HTTP 403 to a User-Agent without an email-shaped contact; OpenBB's shipped UA and a browser UA return 200."
+    github_run: 36954321217
+    commit: 0a3129004cc6f6d75204ce322e38b4f6d0f53654
+  E_LIVE_R2:
+    kind: live
+    description: "Probe v2, all four groups (connect_identity 110675157986, market 110675158033, fundamentals 110675158016, ownership_events 110675157818), 2026-10-02 ~02:15-02:18Z, Python 3.14.7, openbb-core 2.0.1, SEC/Nasdaq/Cboe/News 2.0.0."
+    github_run: 36954761165
+    commit: bab0870399df1d03de90daa81db8f7f7ba935243
+  E_LIVE_R3:
+    kind: live
+    description: "Probe v3 'followup' group (22/22 OK, job 110677142848), 2026-10-02 ~02:24Z: multi-class market cap, company_type, net-income tags, NVDA split vintage, quarterly cash flow, dei shares, cik_map/symbol_map."
+    github_run: 36955401657
+    commit: 2be976b3e9c5151c7edef56fb6fcddd5f30f0f8f
+  E_LIVE_R4:
+    kind: live
+    description: "Probe 'taxonomy' group (44/45 OK; the one failure is the screener's communication_services sector returning no rows), job 110682502819, 2026-10-02 ~02:47Z: Nasdaq quote/profile sector+industry, SEC SIC and Nasdaq screener vocabulary for 14 issuers."
+    github_run: 36957138239
+    commit: 778200026ab299942caeeaad5bae67b27fe5a66a
+  E_FIXTURE_OPENBB:
+    kind: fixture
+    description: "Real responses recorded by the OpenBB project's own test suite (upstream commit pinned in PROVENANCE.json), trimmed: SEC company_tickers, submissions (AAPL), XBRL frames, two Form 4 XML files, a 13F header, Cboe history. NOT fetched by this project; valid for payload shape at the recorded date only."
+    path: tests/fixtures/provider_samples
+  E_FIXTURE_LIVE:
+    kind: fixture
+    from_live: true
+    description: "Values transcribed from the live probe log lines (run ids in PROVENANCE.json), unmodified, fields trimmed, personal names omitted."
+    path: tests/fixtures/live_probe_2026_10_02
+  E_SHAPE:
+    kind: installed_code
+    description: "Installed provider packages inspected: openbb-core 2.0.1, openbb-sec 2.0.0, openbb-nasdaq 2.0.0, openbb-cboe 2.0.0, openbb-news 2.0.0 (hash-locked in requirements.lock). obb.coverage.commands lists 103 commands; obb.reference gives parameters and result fields per provider. All four providers declare credentials=None."
+  E_UNIT:
+    kind: unit_tests
+    description: "Executable metric rules: tests/test_metrics.py, tests/test_live_fixtures.py, tests/test_evidence_model.py."
+
+environment:
+  openbb_version: "openbb-core 2.0.1 (V5); extensions sec/nasdaq/cboe/news 2.0.0"
+  credentials_required: false
+  sec_user_agent: "SEC fair-access policy requires a contact in the User-Agent. OpenBB ships a placeholder UA that worked in the audit; production use needs a real contact configured by the operator (not set in this repository). A UA without an email-shaped contact got HTTP 403 (E_LIVE_R1)."
+  sec_rate_limit: "SEC documents 10 requests/second; OpenBB defaults OPENBB_SEC_REQUESTS_PER_SECOND to 9. Not stress-tested."
+  nasdaq_cboe_rate_limits: "Undocumented unofficial endpoints (api.nasdaq.com, cdn.cboe.com). No throttling seen at audit volume (about 70 calls per group). NOT verified at universe scale; both can change or block without notice."
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Identity model (domain A)
+# ---------------------------------------------------------------------------------------------------------------------
+identity_model:
+  issuer: "Keyed by CIK (10-digit text via app.models.identifiers.normalize_cik). Issuer-level facts (financial statements, filings, ownership of the issuer, events) key on cik."
+  security: "A listed security (one ticker on one listing) keyed by securities.security_id; one issuer has many securities (GOOGL/GOOG/GOOGM/GOOGN under CIK 0001652044; BRK-A/BRK-B under 0001067983). Prices and quotes key on security_id."
+  internal_ticker_spelling: "SEC spelling with '-' for the class suffix (BRK-B). Nasdaq and Cboe accept BRK.B; Nasdaq BRK/B returned EmptyDataError and Cboe BRK-B returned HTTP 403 (E_LIVE_R2). Implemented in app/models/symbols.py; only single-letter class suffixes are rewritten, preferred/unit/warrant conventions are NOT_VERIFIED and pass through unchanged."
+  ticker_vs_cik: "A ticker is a lookup key that can be re-used, renamed or retired; the CIK is the stable key. obb.sec.cik_map(BRK-B) = 0001067983 and obb.sec.symbol_map(1067983) = BRK-B (E_LIVE_R3)."
+  ticker_changes_and_history: "UNAVAILABLE as a dated history. SEC submissions give the current tickers plus formerNames (name history with dates, e.g. Facebook Inc until 2021-10-27 for META) but no former tickers. company_tickers_exchange.json is a current snapshot only (FB, TWTR, ATVI absent). Ticker history must be built by this project from dated snapshots of that file, forward from first ingestion; pre-ingestion history is not obtainable from the installed providers."
+  discontinued_issuers: "Resolved by CIK: submissions for TWTR (0001418091) and ATVI (0000718877) still return filings (TWTR last filing 2022-12-02) with an empty ticker list. They are absent from company_tickers. Their prices are not available from Nasdaq/Cboe (Nasdaq profile TWTR: EmptyDataError)."
+  mergers_and_name_changes: "A name change keeps the CIK (META). A pre-holding-company registrant has a different CIK (Google Inc. 0001288776 vs Alphabet 0001652044); successor linkage is NOT in the providers and would have to be curated."
+  similar_tickers: "Search is by name/prefix and returns look-alikes (obb.sec.equity_search('BRK') returned BRK-B plus RBRK and BRKR; nasdaq search 'META' returned 35 rows). Resolution must be exact-match on canonical symbol or on CIK, never a prefix search."
+  non_class_tickers_under_one_cik: "SEC lists GOOGM and GOOGN under Alphabet's CIK alongside GOOGL/GOOG: not every ticker under a CIK is a share class. Class labels come from the security name in the Nasdaq symbol directory ('Alphabet Inc. - Class C Capital Stock')."
+  evidence: [E_LIVE_R2, E_LIVE_R3, E_FIXTURE_LIVE]
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Classification (sector / industry) decision
+# ---------------------------------------------------------------------------------------------------------------------
+classification:
+  systems_in_use:
+    nasdaq: "Nasdaq sector (11 values: energy, basic_materials, industrials, consumer_staples, consumer_discretionary, health_care, financial_services, technology, communication_services, utilities, real_estate) and free-text industry. Source of the V5 screener (exchanges nasdaq, nyse, amex, all)."
+    sec_sic: "SEC Standard Industrial Classification: 4-digit code + description per issuer. No sector."
+    gics: "NOT USED. Nothing in the project produces, stores or assumes GICS. It is required only if the project later chooses it, as an explicit decision."
+  decision: "Preserve the raw source classification and its source system. Never convert SIC to Nasdaq, Nasdaq to GICS, or the reverse. A query is evaluated in ONE named taxonomy."
+  implementation: "app/screening/classification.py (Classification carries its system; matches_nasdaq / matches_sic; applying a filter to the wrong system raises TaxonomyError; missing or 'N/A' is unknown, not false). tests/test_classification.py."
+  how_semiconductors_are_classified_live:
+    nasdaq: "sector 'Technology', industry exactly 'Semiconductors': NVDA, AMD, AVGO, INTC, MU, TXN, TSM (TSM is NYSE-listed). QCOM is Technology / 'Radio And Television Broadcasting And Communications Equipment'; ASML is Technology / 'Industrial Machinery/Components'."
+    sec_sic: "code 3674 'Semiconductors & Related Devices': NVDA, AMD, AVGO, INTC, TSM, MU, TXN. QCOM is 3663 and ASML 3559."
+    note: "The two systems agree on this 14-name sample for the 3674/Semiconductors set but are different systems with different members elsewhere; the agreement is not a mapping."
+  query_interpretation:
+    - query: "Technology stocks excluding semiconductors"
+      interpreted_as: "Nasdaq taxonomy: sector == 'Technology' AND industry != 'Semiconductors' (exact strings). Result on the sample: AAPL, MSFT, META, GOOGL, QCOM, ASML. The query is stated back to the user as a Nasdaq-taxonomy query."
+      not_done: "No SIC test is mixed in; AMZN is excluded because Nasdaq files it under Consumer Discretionary; QCOM and ASML stay because Nasdaq does not call them semiconductors."
+    - query: "Semiconductor companies (SEC definition)"
+      interpreted_as: "SEC SIC code 3674."
+    - query: "Technology sector (SIC)"
+      interpreted_as: "Rejected as ill-formed: SIC has no sector. The user is asked to choose SIC codes or the Nasdaq sector."
+  normalization_layer: "Not needed now. If a project grouping is ever required it is an explicit versioned mapping table (source system, source value) -> project group, kept alongside the raw columns, hand-reviewed, with the group named in results (see normalized_classification)."
+  storage_requirement: "securities.sector / securities.industry hold Nasdaq's raw strings and securities.sic the SEC code; the provider of each must be recorded (schema_gaps G6). Do not reuse these columns for any converted value."
+  evidence: [E_LIVE_R2, E_LIVE_R4, E_FIXTURE_LIVE]
+
+# ---------------------------------------------------------------------------------------------------------------------
+# SEC raw provenance design (canonical for accounting facts)
+# ---------------------------------------------------------------------------------------------------------------------
+sec_provenance:
+  decision: "Raw SEC companyfacts (and submissions for filings) are the canonical provenance layer for accounting facts. OpenBB sec.income_statement / balance_sheet / cash_flow remain a convenient interface and a cross-check, never the store of record: its rows carry no accession, filed date or form and merge vintages."
+  raw_sources:
+    companyfacts: "https://data.sec.gov/api/xbrl/companyfacts/CIK##########.json (every concept, every filed vintage)"
+    submissions: "https://data.sec.gov/submissions/CIK##########.json (filings index: accession, form, filing and report dates, items, acceptanceDateTime, primary document)"
+    frames: "https://data.sec.gov/api/xbrl/frames/{taxonomy}/{concept}/{unit}/{frame}.json (cross-sectional pulls; latest value per filer, not a vintage store)"
+  fields_preserved:
+    cik: {record_field: "financial_facts.cik", note: "normalize_cik, 10-digit text"}
+    taxonomy: {record_field: "financial_facts.taxonomy", note: "us-gaap, dei, ifrs-full, ..."}
+    tag_concept: {record_field: "financial_facts.concept"}
+    unit: {record_field: "financial_facts.unit", note: "USD, shares, USD/shares, pure"}
+    value: {record_field: "financial_facts.value", note: "as reported; sign per tag"}
+    start: {record_field: "financial_facts.period_start", note: "NULL means instant"}
+    end: {record_field: "financial_facts.period_end"}
+    instant: {record_field: "period_start IS NULL", note: "instant facts have no start key (dei shares, balance sheet items)"}
+    filed: {record_field: "financial_facts.filed_date"}
+    form: {record_field: "financial_facts.form", note: "10-K, 10-Q, 10-K/A, ..."}
+    fy: {record_field: "financial_facts.fiscal_year"}
+    fp: {record_field: "financial_facts.fiscal_period", note: "FY, Q1-Q3"}
+    accn: {record_field: "financial_facts.accession_no", note: "part of the business key: vintages stay separate rows"}
+    frame: {record_field: "NONE YET (schema gap G7)", note: "kept on RawFactPoint; add nullable financial_facts.frame before Phase 3 loading"}
+    source_reference: {record_field: "sources.url + sources.command/parameters (gap S1)", note: "deterministic: RawFactPoint.source_ref = companyfacts URL + #taxonomy/concept/unit; filing_url derived from the accession number"}
+  implementation: "app/models/sec_facts.py (RawFactPoint, parse_companyfacts_point: unknown keys rejected, instants preserved, frame never dropped silently); tests/test_sec_provenance.py."
+  rules:
+    - "Every ingested accounting fact row must have source_id, accession_no, filed_date and form (service-level check; SEC-sourced rows without an accession are rejected)."
+    - "A restatement is a new row (new accession), never an update of the old one; point-in-time reads use latest_known(as_of)."
+    - "OpenBB statements may populate screens' convenience columns only if each value is reconcilable to a raw point; mismatches are logged, raw wins."
+    - "Re-fetch is idempotent: same (cik, taxonomy, concept, unit, period, accession) is the same fact."
+  evidence: [E_LIVE_R2, E_LIVE_R3, E_FIXTURE_LIVE, E_UNIT]
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Universe pilot design (must pass before any full-market load)
+# ---------------------------------------------------------------------------------------------------------------------
+universe_pilot:
+  principle: "No full-universe ingestion until a pilot of about 100-500 representative securities passes every acceptance criterion below, measured and written to a pilot report. Phase 2 downloaded none of it."
+  stages:
+    - id: P0_dry_run
+      size: "5-10 symbols (AAPL, GOOGL, BRK-B, RIVN, KOSS, TWTR, a bank, an ADR)"
+      purpose: "Exercise every loader end to end on the audit's known cases; compare with the recorded fixtures."
+    - id: P1_pilot
+      size: "about 300 securities (allowed 100-500)"
+      purpose: "Measure all acceptance criteria on a stratified sample, in a separate database file (DATABASE_PATH) that can be discarded."
+    - id: P2_scale_gate
+      size: "about 2,000 securities, drawn the same way"
+      purpose: "Repeat the measurements; confirm request volume and time extrapolate to the full universe."
+    - id: P3_full
+      size: "full US universe"
+      purpose: "Only after P1 and P2 both pass."
+  selection:
+    method: "Deterministic and reproducible: a fixed seed over the SEC company_tickers_exchange map, stratified; the chosen symbols are written to a manifest file in the pilot report. Not hand-picked."
+    strata:
+      - "Exchanges: Nasdaq, NYSE, NYSE American/AMEX (and OTC only as a negative sample): at least 30 securities each for the three listed venues."
+      - "Size (Nasdaq market-cap buckets): mega, large, mid, small, micro: at least 20 each."
+      - "Nasdaq sectors: all 11 represented (at least 10 each where the universe allows)."
+      - "Multi-class issuers: at least 10 (GOOGL/GOOG, BRK, META-type) including their share-class tickers."
+      - "Non-calendar fiscal years: at least 30 (52/53-week filers included)."
+      - "Loss-making issuers: at least 30; negative equity: at least 5."
+      - "Recent IPOs (under 3 years): at least 15 (short-history and no-5Y cases)."
+      - "Financials (banks, insurers, diversified): at least 20; REITs/utilities: at least 10; ADRs/foreign filers: at least 10 (expected gaps)."
+      - "Discontinued/renamed CIKs: at least 5; tickers with class suffixes: at least 5; recent 10-K/A filers: at least 5; known split names: at least 3."
+  measurements:
+    - {id: M1_identity, measure: "identity success rate", definition: "securities resolved to exactly one CIK / securities in the sample (ETFs and test issues excluded and counted separately)"}
+    - {id: M2_cik_mapping, measure: "CIK mapping success and consistency", definition: "ticker->CIK and CIK->ticker agree for each resolved security; ambiguous or conflicting mappings listed"}
+    - {id: M3_price, measure: "price success", definition: "securities with expected trading-day coverage / securities expected to have prices; duplicate (security_id, date) rows; unexplained gaps"}
+    - {id: M4_sec_facts, measure: "SEC fact success", definition: "per core concept (revenue, net_income_to_common, operating cash flow, capex, total assets, equity, debt lines, shares) share of issuers with >= 4 fiscal years"}
+    - {id: M5_missing, measure: "missing-data rate", definition: "NULL share per stored field and per derived metric state (MISSING_INPUT / NOT_MEANINGFUL / OK); zeros created from absence"}
+    - {id: M6_duplicates, measure: "duplicate rate", definition: "rows violating a documented business key before upsert, and rows after (must be zero)"}
+    - {id: M7_requests, measure: "request volume", definition: "requests per provider and per security, bytes, sustained requests/second (SEC)"}
+    - {id: M8_failures, measure: "request failures", definition: "non-2xx responses, timeouts, retries, 403/429 counts by provider"}
+    - {id: M9_warnings, measure: "provider warnings", definition: "every OpenBB/provider warning captured and categorised"}
+    - {id: M10_time, measure: "ingestion time", definition: "wall time per stage; median and p95 per security; projected full-universe time and database size"}
+    - {id: M11_upsert, measure: "upsert behaviour", definition: "second identical run inserts 0 rows; a changed value updates 1; an amendment adds a new accession; reads during a write report unavailable/cached honestly"}
+    - {id: M12_crosschecks, measure: "cross-source agreement", definition: "52-week high vs Nasdaq year_high; issuer_market_cap vs close x dei shares (single-class); SEC revenue vs Nasdaq revenue (unit-adjusted)"}
+  acceptance_criteria:
+    - {id: A1, metric: M1_identity, threshold: ">= 99% resolved (denominator: US-listed operating-company securities); 0 unresolved ambiguous tickers"}
+    - {id: A2, metric: M2_cik_mapping, threshold: "100% of resolved securities round-trip ticker->CIK->ticker (class tickers listed explicitly); 0 CIKs stored un-normalised"}
+    - {id: A3, metric: M3_price, threshold: ">= 98% of expected securities with full expected coverage; 0 duplicate (security_id, trade_date); every unexplained gap over 5 trading days reviewed; split re-base detection correct on all sampled split names"}
+    - {id: A4, metric: M4_sec_facts, threshold: ">= 95% of non-financial operating companies have revenue, net income to common, operating cash flow and total assets for the last 4 fiscal years; financials and ADRs reported separately, not hidden in the average"}
+    - {id: A5, metric: M5_missing, threshold: "core fields (revenue, net_income_to_common, operating cash flow, equity) missing <= 5% for industrial filers; 0 debt values equal to 0 without explicit evidence; 0 NaN/inf stored"}
+    - {id: A6, metric: M6_duplicates, threshold: "0 duplicate logical keys in every ingested table after load and after a full re-run"}
+    - {id: A7, metric: M7_requests, threshold: "SEC sustained <= 9 requests/second; measured requests per security recorded; projected full-universe request count and wall time stated and acceptable (initial load <= 12 h, daily incremental <= 30 min on one machine)"}
+    - {id: A8, metric: M8_failures, threshold: "<= 1% requests failing after retries; 0 SEC 403/429 responses; every failure class has a handler"}
+    - {id: A9, metric: M9_warnings, threshold: "every provider warning categorised; 0 uncategorised warnings"}
+    - {id: A10, metric: M10_time, threshold: "pilot completes without manual intervention; per-security p95 time recorded; extrapolation meets A7"}
+    - {id: A11, metric: M11_upsert, threshold: "second identical run inserts 0 rows; one changed fact updates exactly 1 row; an amended filing adds a new accession row; no read ever shows stale data as live during a write"}
+    - {id: A12, metric: M12_crosschecks, threshold: "52-week high within 0.5% of Nasdaq year_high for >= 95% of securities; issuer_market_cap within 2% of close x dei shares for >= 90% of single-class issuers; revenue within 1% of Nasdaq for >= 90% of compared issuers"}
+    - {id: A13, metric: M5_missing, threshold: "100% of ingested provider rows carry source_id; 100% of SEC fact rows carry accession_no, filed_date and form; raw sector/industry/SIC stored with source and 0 converted classification values"}
+  scaling_rule: "Scale from P1 to P2 only if every A1-A13 criterion passes with the pilot report attached. Any criterion failing, or any new unexplained provider behaviour, stops scaling: fix, then re-run the full pilot, not just the failed measurement. Scale from P2 to the full universe only if A1-A13 pass again and the extrapolation in A7 and A10 holds."
+  report: "pilot_report.json plus a short markdown summary, written by the pilot run: all measurements M1-M12, the symbol manifest, the acceptance table (pass/fail per criterion) and the list of failures."
+  not_in_phase_2: true
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Price semantics (canonical)
+# ---------------------------------------------------------------------------------------------------------------------
+price_semantics:
+  close_is_split_adjusted: "YES (LIVE, E_LIVE_R2). Cboe and Nasdaq agree: AAPL 2020-08-26 close 126.52 (4-for-1 split on 2020-08-31 is later), AMZN 2022-06-01 121.68 (20-for-1 in June 2022), NVDA 2024-06-04 116.44 (10-for-1 on 2024-06-10). The whole history is re-based by the provider whenever a new split occurs."
+  close_includes_dividends: "NO, as far as measured: Cboe and Nasdaq closes for MSFT and KO are IDENTICAL on shared 2016 dates, i.e. neither provider applies a dividend adjustment (an adjusted series would differ by the cumulative dividend factor and the two vendors would be unlikely to agree). Not independently checked against exchange raw prints: treat 'not dividend-adjusted' as measured-by-agreement, not as exchange-certified."
+  adjusted_close_field: "PriceRecord.adj_close stays NULL. No provider returns a dividend-adjusted close."
+  returns_are: "PRICE returns only (close-to-close, no dividends, no reinvestment). Every price_return result carries the flag PRICE_RETURN_EXCLUDES_DIVIDENDS. They are labelled 'price return' everywhere and are never called total return."
+  total_return: "UNAVAILABLE in Phase 2: needs verified dividend history (obb.nasdaq.equity.fundamental.dividends is API_SHAPE_VERIFIED only; adjustment basis unverified). Not computed, not approximated."
+  benchmark_returns: "Benchmark price returns (SPY/QQQ/XLK ETF closes, SPX/COMP index closes) are also price-only, so stock-minus-benchmark compares like with like. Index total-return series are UNAVAILABLE."
+  drawdown_definition: "drawdown_from_52w_high (canonical) = close / INTRADAY 52-week high - 1, the convention of Nasdaq's published year high (equal to max(high) for AAPL, NVDA, MSFT). drawdown_from_52w_closing_high = close / highest CLOSE in the window - 1 is a separate, explicitly named metric; the two are never interchanged."
+  week52_window: "365 calendar days ending on the as-of date, inclusive; computed from daily history, never stored."
+  consequence_of_split: "A split changes every stored historical close for that security; a refresh must compare overlapping dates and reload the full history when the ratio differs from 1, otherwise stored returns, highs and drawdowns silently mix bases."
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Metric dictionary (canonical source of truth for the future screener). One entry per metric/dataset.
+# ---------------------------------------------------------------------------------------------------------------------
+_text:
+  sec_vintage: &sec_vintage "SEC companyfacts keeps every filed vintage of a fact (accn, filed, form, fy, fp); a period appears in several filings (RIVN FY2024 NetIncomeLoss is in both the FY2024 and FY2025 10-Ks, same value) and occasionally with different values (KOSS 2017-Q3 revenue). OpenBB returns one wide row per period built from the latest vintage (pit_mode=false) or the as-first-filed one (pit_mode=true) and exposes NO accession or filing date per row. Ingest raw companyfacts points (accn+filed+form) and choose the vintage at query time with latest_known(as_of); never overwrite an older vintage."
+  price_basis: &price_basis "Closes are split-adjusted and, as measured by Cboe/Nasdaq agreement on MSFT and KO, not dividend-adjusted (E_FIXTURE_LIVE; see price_semantics). A later split re-bases the whole provider history, so a refresh must compare overlapping rows and reload the full history when the ratio is not 1."
+  no_restatement_market: &no_restate_market "Market data has no filing vintages. History is re-based by splits only; dividends do not change stored closes."
+  tz_note: &tz_note "Dates are exchange-local trading dates as ISO strings; timestamps are naive. Nasdaq last_timestamp 2026-10-01T00:00:00 is a date, not an instant."
+
+metrics:
+  # ------------------------------------------------------------------------------------------------ A. identity
+  - metric: issuer_cik
+    category: identity
+    canonical_definition: "The SEC Central Index Key of the issuer, 10-digit zero-padded text."
+    source: "SEC EDGAR"
+    provider: sec
+    command: "obb.sec.cik_map(symbol)"
+    identifier: "ticker (SEC spelling) -> cik"
+    period: "snapshot"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "Unknown ticker raises OpenBBError ('not found in SEC database'): treat as NULL cik and keep the row unresolved; never guess from a name."
+    negative_data_behavior: "n/a"
+    restatement_behavior: "Snapshot of the current ticker map; a retired ticker (TWTR, ATVI, FB) is not found."
+    status: LIVE_VERIFIED
+    fallback: "SEC company_tickers_exchange.json (HTTP GET https://www.sec.gov/files/company_tickers_exchange.json): 10,434 rows, 4 fields (cik, name, ticker, exchange)."
+    limitations: "Result is a single object, not a list. 'BRKB' and 'TWTR' fail; 'BRK.B' not tested on this command (NOT_VERIFIED). Nasdaq's company profile returns cik NULL, so Nasdaq data can only be joined to SEC by ticker."
+    sample_tested: {live: true, evidence: [E_LIVE_R2, E_LIVE_R3], symbols: [AAPL, BRK-B]}
+
+  - metric: ticker_to_cik_universe_map
+    category: identity
+    canonical_definition: "All current ticker -> (cik, name, exchange) pairs, used to seed the securities table."
+    source: "SEC EDGAR"
+    provider: sec
+    command: "HTTP GET https://www.sec.gov/files/company_tickers_exchange.json"
+    identifier: "ticker -> cik"
+    period: "snapshot (current)"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "exchange can be null (170 of 10,434 rows); keep NULL."
+    negative_data_behavior: "n/a"
+    restatement_behavior: "Replaced wholesale on SEC's side; store each retrieval (sources) so ticker history can be reconstructed going forward."
+    status: LIVE_VERIFIED
+    fallback: "https://www.sec.gov/files/company_tickers.json (no exchange) or nasdaqtrader symbol directory for Nasdaq/other-listed names."
+    limitations: "Exchange mix: Nasdaq 4376, NYSE 3299, OTC 2545, CBOE 44, null 170. Contains ETFs and OTC names: security type must come from a second source. Needs the SEC User-Agent contact."
+    sample_tested: {live: true, evidence: [E_LIVE_R2, E_FIXTURE_OPENBB], symbols: [AAPL, GOOGL, GOOG, BRK-B, META, NVDA, RIVN, PTON, COST, KOSS]}
+
+  - metric: cik_to_ticker
+    category: identity
+    canonical_definition: "Current ticker(s) of an issuer."
+    source: "SEC EDGAR"
+    provider: sec
+    command: "obb.sec.symbol_map(query)"
+    identifier: "cik -> ticker"
+    period: "snapshot"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "Returns one symbol only; an issuer with several classes needs submissions.tickers or the universe map instead."
+    negative_data_behavior: "n/a"
+    restatement_behavior: "Snapshot."
+    status: LIVE_VERIFIED
+    fallback: "submissions JSON 'tickers' array: HTTP GET https://data.sec.gov/submissions/CIK##########.json (GOOGL lists GOOGL, GOOG, GOOGM, GOOGN)."
+    limitations: "symbol_map(1067983) returned BRK-B only, not BRK-A."
+    sample_tested: {live: true, evidence: [E_LIVE_R3, E_LIVE_R2], symbols: [AAPL, BRK-B, GOOGL]}
+
+  - metric: issuer_name_and_former_names
+    category: identity
+    canonical_definition: "Current registrant name and its dated former names."
+    source: "SEC EDGAR submissions"
+    provider: sec
+    command: "HTTP GET https://data.sec.gov/submissions/CIK##########.json (fields name, formerNames[name,from,to])"
+    identifier: cik
+    period: "snapshot with dated history of names"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "formerNames may be empty."
+    negative_data_behavior: "n/a"
+    restatement_behavior: "Replaced on each fetch."
+    status: LIVE_VERIFIED
+    fallback: "Nasdaq profile name (no CIK) as a display-name fallback."
+    limitations: "Names are not tickers: META shows Facebook Inc to 2021-10-27 but no ticker FB. TWTR's formerNames covers 2007-2010 only."
+    sample_tested: {live: true, evidence: [E_LIVE_R2, E_FIXTURE_OPENBB], symbols: [META, TWTR, AAPL]}
+
+  - metric: exchange_listing
+    category: identity
+    canonical_definition: "Primary exchange of a listed security."
+    source: "SEC company_tickers_exchange; Nasdaq quote"
+    provider: sec
+    command: "HTTP GET https://www.sec.gov/files/company_tickers_exchange.json (exchange); obb.nasdaq.equity.quote (exchange)"
+    identifier: ticker
+    period: "snapshot"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "NULL when absent."
+    negative_data_behavior: "n/a"
+    restatement_behavior: "Snapshot."
+    status: LIVE_VERIFIED
+    fallback: "nasdaqtrader symbol directory (nasdaqlisted: 5640 rows incl. Market Category Q/S, ETF flag, Test Issue)."
+    limitations: "Vocabularies differ ('Nasdaq' vs 'NASDAQ-GS' vs 'NYSE'); keep the raw value and map in one place."
+    sample_tested: {live: true, evidence: [E_LIVE_R2], symbols: [AAPL, BRK-B, KOSS]}
+
+  - metric: security_type
+    category: identity
+    canonical_definition: "Common stock vs ETF vs other instrument for a listed ticker."
+    source: "nasdaqtrader symbol directory"
+    provider: nasdaqtrader
+    command: "HTTP GET https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt (columns Symbol, Security Name, Market Category, Test Issue, Financial Status, Round Lot Size, ETF)"
+    identifier: ticker
+    period: "snapshot"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "Tickers not in the directory (NYSE-listed) have NULL type until the other-listed file is added."
+    negative_data_behavior: "n/a"
+    restatement_behavior: "Snapshot."
+    status: LIVE_VERIFIED
+    fallback: "Nasdaq profile stock_type ('Common Stock' for AAPL); SEC lists no instrument type."
+    limitations: "Only the nasdaqlisted file was probed (5640 rows); the NYSE/other-listed file was NOT verified. ADR/preferred/warrant/unit detection from names is not verified. No structured share-class attribute exists."
+    sample_tested: {live: true, evidence: [E_LIVE_R2], symbols: [AAPL, GOOG, GOOGL, META, NVDA, KOSS, COST]}
+
+  - metric: sic_code_and_description
+    category: identity
+    canonical_definition: "SEC Standard Industrial Classification: 4-digit code and its description, as reported by the SEC for the issuer. A distinct taxonomy from Nasdaq's sector/industry; it has no sector concept."
+    source: "SEC EDGAR submissions"
+    provider: sec
+    command: "HTTP GET https://data.sec.gov/submissions/CIK##########.json (sic, sicDescription)"
+    identifier: cik
+    period: "snapshot"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "NULL (unknown)."
+    negative_data_behavior: "n/a"
+    restatement_behavior: "Snapshot; the SEC can reassign a code."
+    status: LIVE_VERIFIED
+    fallback: "obb.sec.sic_search for the code table. No fallback to Nasdaq labels: they are a different taxonomy and are never converted."
+    limitations: "Observed: AAPL 3571, MSFT 7372, NVDA/AMD/AVGO/INTC/TSM/MU/TXN 3674 (Semiconductors & Related Devices), META and GOOGL 7370, AMZN 5961, QCOM 3663, ASML 3559. Coarse and sometimes surprising (QCOM is not 3674). Stored raw; never mapped to Nasdaq sectors or GICS."
+    sample_tested: {live: true, evidence: [E_LIVE_R2, E_LIVE_R4], symbols: [AAPL, MSFT, NVDA, AMD, AVGO, META, AMZN, GOOGL, INTC, QCOM, TSM, ASML, MU, TXN]}
+
+  - metric: nasdaq_sector_industry
+    category: identity
+    canonical_definition: "Nasdaq's own sector (11-value vocabulary such as 'Technology') and industry (free-text label such as 'Semiconductors') for a listed security, stored raw with provider 'nasdaq'. A distinct taxonomy from SEC SIC. Not GICS."
+    source: "Nasdaq"
+    provider: nasdaq
+    command: "obb.nasdaq.equity.quote(symbol) and obb.nasdaq.equity.profile(symbol) (sector, industry); obb.nasdaq.equity.screener(sector=..., exchange=nasdaq|nyse|amex|all)"
+    identifier: ticker
+    period: "snapshot"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "Returned as the string 'N/A' (BRK.B): normalise to NULL (unknown). profile.industry_category and industry_group were null for every symbol probed; only the quote/screener industry is populated."
+    negative_data_behavior: "n/a"
+    restatement_behavior: "Snapshot; vendor can relabel."
+    status: LIVE_VERIFIED
+    fallback: "SEC SIC (separate taxonomy, no conversion)."
+    limitations: "Observed (E_LIVE_R4): AAPL Technology/Computer Manufacturing; MSFT Technology/Computer Software: Prepackaged Software; NVDA, AMD, AVGO, INTC, MU, TXN, TSM Technology/Semiconductors; META and GOOGL Technology/Computer Software: Programming Data Processing; AMZN Consumer Discretionary/Catalog/Specialty Distribution; QCOM Technology/Radio And Television Broadcasting And Communications Equipment; ASML Technology/Industrial Machinery/Components. Industry strings are free text and sector-dependent (the Technology screener has 13 industries, Consumer Discretionary 62). The screener accepts sector and exchange (nasdaq, nyse, amex, all) filters but not an industry filter, returns no exchange column, and its communication_services sector returned no rows. 'exchange=all' included NYSE-listed TSM; AMEX was not sampled."
+    sample_tested: {live: true, evidence: [E_LIVE_R2, E_LIVE_R4], symbols: [AAPL, MSFT, NVDA, AMD, AVGO, META, AMZN, GOOGL, INTC, QCOM, TSM, ASML, MU, TXN]}
+
+  - metric: normalized_classification
+    category: identity
+    canonical_definition: "A project-defined industry grouping (for example 'semiconductors' including chip designers and equipment) layered over the raw taxonomies."
+    source: "none"
+    provider: none
+    command: "none"
+    identifier: "cik or security_id"
+    period: "versioned mapping"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "Not implemented: queries use the raw Nasdaq or SIC classification and say which."
+    negative_data_behavior: "n/a"
+    restatement_behavior: "n/a"
+    status: UNAVAILABLE
+    fallback: "Raw source classification (see the classification section for how queries are interpreted)."
+    limitations: "Needed only if the product wants groupings the sources lack (QCOM and ASML are not 'Semiconductors' at Nasdaq). If added it must be an explicit, versioned, hand-reviewed mapping table (source system, source value) -> group, stored ALONGSIDE the untouched raw values; no automatic SIC->Nasdaq or Nasdaq->GICS conversion."
+    sample_tested: {live: true, evidence: [E_LIVE_R4], symbols: [QCOM, ASML]}
+
+  - metric: fiscal_year_end
+    category: identity
+    canonical_definition: "Nominal fiscal year end month/day of the issuer."
+    source: "SEC EDGAR submissions"
+    provider: sec
+    command: "HTTP GET https://data.sec.gov/submissions/CIK##########.json (fiscalYearEnd as MMDD)"
+    identifier: cik
+    period: "snapshot"
+    direct_or_derived: direct
+    inputs: []
+    formula: "app.models.periods.parse_fiscal_year_end('0926') -> (9, 26)"
+    missing_data_behavior: "NULL."
+    negative_data_behavior: "n/a"
+    restatement_behavior: "Snapshot; changes when a company changes fiscal year (transition period filed as 10-KT)."
+    status: LIVE_VERIFIED
+    fallback: "Derive from the period_end dates of ingested 10-K facts."
+    limitations: "Nominal only: AAPL '0926' but actual year ends vary (2025-09-27, 2024-09-28; 52/53-week). Non-calendar examples seen: AAPL 0926, MSFT 0630, NVDA 0131, AVGO 1101, COST 0830, PTON 0630, KOSS 0630, AMD 1226."
+    sample_tested: {live: true, evidence: [E_LIVE_R2, E_FIXTURE_LIVE], symbols: [AAPL, MSFT, NVDA, AVGO, COST, PTON, KOSS, AMD]}
+
+  - metric: share_class
+    category: identity
+    canonical_definition: "Which class a listed ticker represents for a multi-class issuer."
+    source: "derived"
+    provider: derived
+    command: "derived from SEC submissions tickers[] + nasdaqtrader Security Name"
+    identifier: "cik + ticker"
+    period: "snapshot"
+    direct_or_derived: derived
+    inputs: [ticker_to_cik_universe_map, security_type]
+    formula: "class label = text after ' - ' in the Security Name ('Class C Capital Stock'); issuer has >1 listed ticker under one CIK."
+    missing_data_behavior: "NULL when the name carries no class text."
+    negative_data_behavior: "n/a"
+    restatement_behavior: "Snapshot."
+    status: DERIVED
+    fallback: "Curated mapping for the few dozen dual-class issuers if names prove unreliable."
+    limitations: "No provider returns a class attribute. GOOGM/GOOGN under GOOGL's CIK are not share classes. META's Nasdaq name says 'Class A Common Stock' although META has a single traded class. Not verified beyond the sample."
+    sample_tested: {live: true, evidence: [E_LIVE_R2], symbols: [GOOGL, GOOG, META, BRK-B]}
+
+  - metric: ticker_history
+    category: identity
+    canonical_definition: "Dated history of which ticker an issuer used."
+    source: "none"
+    provider: none
+    command: "none"
+    identifier: cik
+    period: "history"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "Unavailable: do not infer a rename from a name change."
+    negative_data_behavior: "n/a"
+    restatement_behavior: "n/a"
+    status: UNAVAILABLE
+    fallback: "Snapshot company_tickers_exchange.json on every refresh and record changes in this project's own table going forward."
+    limitations: "Pre-ingestion ticker history (FB->META 2022-06-09) is not in any installed provider; submissions has formerNames only."
+    sample_tested: {live: true, evidence: [E_LIVE_R2], symbols: [META, TWTR, ATVI]}
+
+  - metric: listing_status
+    category: identity
+    canonical_definition: "Whether an issuer currently has a listed ticker."
+    source: "derived"
+    provider: derived
+    command: "derived: ticker present in company_tickers_exchange / submissions.tickers non-empty"
+    identifier: cik
+    period: "snapshot"
+    direct_or_derived: derived
+    inputs: [ticker_to_cik_universe_map]
+    formula: "active = cik appears in the current company_tickers_exchange map; inactive = known CIK absent from it (empty submissions.tickers)."
+    missing_data_behavior: "Unknown CIK -> NULL."
+    negative_data_behavior: "n/a"
+    restatement_behavior: "Recomputed per refresh."
+    status: DERIVED
+    fallback: "Nasdaq quote returning EmptyDataError as a secondary signal."
+    limitations: "Delisting date and reason are UNAVAILABLE. Absence from the map can also mean a temporary SEC lag."
+    sample_tested: {live: true, evidence: [E_LIVE_R2], symbols: [TWTR, ATVI, GOOGL]}
+
+  # ------------------------------------------------------------------------------------------------ B. price / market
+  - metric: price_daily_ohlcv
+    category: market
+    canonical_definition: "Daily open, high, low, close, volume per trading date, split-adjusted, not dividend-adjusted."
+    source: "Cboe delayed data"
+    provider: cboe
+    command: "obb.cboe.equity.historical(symbol)"
+    identifier: "ticker (Cboe spelling: BRK.B)"
+    period: "daily; ISO date string; since listing or 2004-01-02"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "Two gaps over 4 days in AAPL's history (2006-12-29 to 2007-01-03 and 2012-10-26 to 2012-10-31) coincide with known market closures (not independently verified): store what is returned, never fill. Options volume columns are mostly null."
+    negative_data_behavior: "n/a"
+    restatement_behavior: *price_basis
+    status: LIVE_VERIFIED
+    fallback: "obb.nasdaq.equity.historical(symbol): same split-adjusted convention, only about 10 years deep (AAPL from 2016-10-03), narrow date windows returned EmptyDataError so pull the full range and slice client-side. Cboe quote for the dash spelling BRK-B returned HTTP 403 (history not tested with it)."
+    limitations: "Unofficial CDN endpoint, no SLA. Adjusted close equal to close: PriceRecord.adj_close must stay NULL (it would be a lie if filled with the split-adjusted close). Verified splits: AAPL 2020, AMZN 2022, GOOGL 2022, NVDA 2024 (Cboe and Nasdaq agree on pre-split rows)."
+    sample_tested: {live: true, evidence: [E_LIVE_R2, E_FIXTURE_OPENBB, E_FIXTURE_LIVE], symbols: [AAPL, AMZN, GOOGL, NVDA, MSFT, KO, RIVN]}
+
+  - metric: price_current_delayed
+    category: market
+    canonical_definition: "Latest delayed quote: last price, previous close, day range, volume."
+    source: "Nasdaq / Cboe"
+    provider: nasdaq
+    command: "obb.nasdaq.equity.quote(symbol); obb.cboe.equity.quote(symbol)"
+    identifier: "ticker (BRK.B)"
+    period: "snapshot"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "Nasdaq returns open/bid/ask null outside hours; Cboe supplies open, iv30 and its own last_timestamp (2026-10-01T15:59:59). Nasdaq last_timestamp is a date at midnight."
+    negative_data_behavior: "n/a"
+    restatement_behavior: *no_restate_market
+    status: LIVE_VERIFIED
+    fallback: "Cboe quote for price/range; last close from price_daily_ohlcv."
+    limitations: "Delayed, not live, and never shown as live. The two providers disagreed on AAPL's last price (Nasdaq 330.32, Cboe 330.78) when queried together after the close; the cause (regular close vs after-hours print) was not verified. Market state from obb.nasdaq.markets.status."
+    sample_tested: {live: true, evidence: [E_LIVE_R2], symbols: [AAPL, NVDA, RIVN, BRK.B]}
+
+  - metric: market_calendar
+    category: market
+    canonical_definition: "Whether the US market is open, previous and next trading dates, session times."
+    source: "Nasdaq"
+    provider: nasdaq
+    command: "obb.nasdaq.markets.status()"
+    identifier: "market"
+    period: "snapshot"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "n/a"
+    negative_data_behavior: "n/a"
+    restatement_behavior: "n/a"
+    status: LIVE_VERIFIED
+    fallback: "Derive trading days from the dates present in price_daily_ohlcv."
+    limitations: "Only the current and adjacent trading day; no historical holiday calendar. Times are exchange-local (US Eastern) without an offset: see tz_note."
+    sample_tested: {live: true, evidence: [E_LIVE_R2], symbols: []}
+
+  - metric: week52_high_low
+    category: market
+    canonical_definition: "Highest high and lowest low over the 365 calendar days ending on the as-of date (intraday), plus close-based variants. Never stored; always computed from price_daily_ohlcv."
+    source: "derived from daily history; Nasdaq quote year_high/year_low as cross-check"
+    provider: derived
+    command: "derived; cross-check obb.nasdaq.equity.quote (year_high, year_low)"
+    identifier: security_id
+    period: "365 calendar days ending as_of (inclusive)"
+    direct_or_derived: derived
+    inputs: [price_daily_ohlcv]
+    formula: "high_52w = max(high), low_52w = min(low) over rows with as_of-365d <= date <= as_of; also high_52w_close / low_52w_close."
+    missing_data_behavior: "Fewer than 20 rows -> MISSING_INPUT (INSUFFICIENT_HISTORY); fewer than 240 rows -> OK with PARTIAL_WINDOW flag (recent IPO)."
+    negative_data_behavior: "n/a"
+    restatement_behavior: "Recomputed on any history re-base (split)."
+    status: DERIVED
+    fallback: "Nasdaq quote year_high/year_low (current only, not point-in-time)."
+    limitations: "My intraday computation equalled Nasdaq's published year high and low exactly for AAPL, NVDA, MSFT (E_LIVE_R2), so Nasdaq uses the intraday convention; the close-based number is lower (AAPL 341.07 vs 345.34)."
+    rule_function: high_low_52w
+    sample_tested: {live: true, evidence: [E_LIVE_R2, E_FIXTURE_LIVE, E_UNIT], symbols: [AAPL, NVDA, MSFT]}
+
+  - metric: price_return
+    category: market
+    canonical_definition: "PRICE return (close-to-close, dividends excluded; NOT total return) over 1D, 1W, 1M, 3M, 6M, 1Y, 3Y, 5Y: last close on/before as_of divided by last close on/before the calendar-anchored start, minus 1."
+    source: "derived"
+    provider: derived
+    command: "derived"
+    identifier: security_id
+    period: "1D=1 day, 1W=7 days, 1M=1 calendar month, 3M, 6M, 1Y=12 months, 3Y, 5Y; anchors month-end clamped"
+    direct_or_derived: derived
+    inputs: [price_daily_ohlcv]
+    formula: "lookback_return(closes, as_of, days|months|years) = close(as_of)/close(anchor) - 1; anchor = anchor_date(as_of, ...)."
+    missing_data_behavior: "Series starts after the anchor (recent IPO: RIVN has no 5Y) -> MISSING_INPUT INSUFFICIENT_HISTORY; base close more than 7 days before the anchor -> MISSING_INPUT BASE_PRICE_STALE. Never substitute a shorter horizon."
+    negative_data_behavior: "Base price <= 0 -> MISSING_INPUT."
+    restatement_behavior: "Recomputed after a split re-base; flagged PRICE_RETURN_EXCLUDES_DIVIDENDS."
+    status: DERIVED
+    fallback: "none needed"
+    limitations: "Dividend-excluded: a high-yield stock's total return is understated. Nasdaq history is only 10 years deep, so 5Y works but 10Y needs Cboe."
+    rule_function: lookback_return
+    sample_tested: {live: true, evidence: [E_UNIT, E_FIXTURE_LIVE], symbols: [RIVN]}
+
+  - metric: drawdown_from_52w_high
+    category: market
+    canonical_definition: "Latest close divided by the INTRADAY 52-week high, minus 1 (zero or negative). The closing-high variant is drawdown_from_52w_closing_high."
+    source: "derived"
+    provider: derived
+    command: "derived"
+    identifier: security_id
+    period: "as_of"
+    direct_or_derived: derived
+    inputs: [price_daily_ohlcv, week52_high_low]
+    formula: "close / high_52w - 1 (high_52w = max intraday high over the window)."
+    missing_data_behavior: "Missing close or high -> MISSING_INPUT."
+    negative_data_behavior: "close above its own window high -> NOT_MEANINGFUL (CLOSE_ABOVE_HIGH): the data is inconsistent."
+    restatement_behavior: "Recomputed after split re-base."
+    status: DERIVED
+    fallback: "none"
+    limitations: "Uses the intraday high, so drawdown is slightly larger than a close-to-close drawdown."
+    rule_function: drawdown_from_high
+    sample_tested: {live: true, evidence: [E_UNIT, E_LIVE_R2], symbols: [AAPL, NVDA, MSFT]}
+
+  - metric: drawdown_from_52w_closing_high
+    category: market
+    canonical_definition: "Latest close divided by the highest CLOSE of the 52-week window, minus 1. Distinct from drawdown_from_52w_high (intraday-high basis)."
+    source: "derived"
+    provider: derived
+    command: "derived"
+    identifier: security_id
+    period: "as_of"
+    direct_or_derived: derived
+    inputs: [price_daily_ohlcv, week52_high_low]
+    formula: "close / high_52w_close - 1 (high_52w_close = max close over the 365-day window)."
+    missing_data_behavior: "Missing close or window -> MISSING_INPUT."
+    negative_data_behavior: "close above the window's closing high -> NOT_MEANINGFUL (CLOSE_ABOVE_HIGH)."
+    restatement_behavior: "Recomputed after split re-base."
+    status: DERIVED
+    fallback: "none"
+    limitations: "Always a smaller drawdown than the intraday basis (AAPL 2026-09-30: closing high 341.07 vs intraday 345.34). A screen must state which basis it uses."
+    rule_function: drawdown_from_high
+    sample_tested: {live: true, evidence: [E_UNIT, E_FIXTURE_LIVE], symbols: [AAPL, NVDA, MSFT]}
+
+  - metric: total_return
+    category: market
+    canonical_definition: "Return including reinvested dividends."
+    source: "none"
+    provider: none
+    command: "none"
+    identifier: security_id
+    period: "horizons as price_return"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "Not computed. A price return must never be presented as a total return."
+    negative_data_behavior: "n/a"
+    restatement_behavior: "n/a"
+    status: UNAVAILABLE
+    fallback: "price_return, labelled as price return."
+    limitations: "Would need a verified dividend history and an adjustment convention; both are NOT_VERIFIED in Phase 2 (see dividend_history)."
+    sample_tested: {live: false, evidence: [E_SHAPE], symbols: []}
+
+  - metric: benchmark_return
+    category: market
+    canonical_definition: "Price return of a market benchmark over the same horizons, used for relative return."
+    source: "Cboe"
+    provider: cboe
+    command: "obb.cboe.equity.historical(SPY|QQQ|XLK) ; obb.cboe.index.historical(SPX) ; obb.nasdaq.index.historical(COMP)"
+    identifier: "benchmark symbol"
+    period: "daily"
+    direct_or_derived: direct
+    inputs: []
+    formula: "price_return applied to the benchmark series."
+    missing_data_behavior: "Index series carry close only (open/high/low/volume all null for SPX)."
+    negative_data_behavior: "n/a"
+    restatement_behavior: *price_basis
+    status: LIVE_VERIFIED
+    fallback: "Nasdaq index history for COMP/NDX; ETF proxies via Nasdaq equity history."
+    limitations: "ETFs are price-only here (no distributions), consistent with stock price returns. Index total-return series are UNAVAILABLE."
+    sample_tested: {live: true, evidence: [E_LIVE_R2], symbols: [SPY, QQQ, XLK, SPX, COMP]}
+
+  - metric: relative_return_vs_benchmark
+    category: market
+    canonical_definition: "Stock price return minus benchmark price return over the same horizon (arithmetic excess return)."
+    source: "derived"
+    provider: derived
+    command: "derived"
+    identifier: "security_id + benchmark"
+    period: "as price_return"
+    direct_or_derived: derived
+    inputs: [price_return, benchmark_return]
+    formula: "price_return(stock) - price_return(benchmark); both must be OK for the same as_of and horizon."
+    missing_data_behavior: "Either side non-OK -> same state, no partial value."
+    negative_data_behavior: "n/a"
+    restatement_behavior: "Recomputed with inputs."
+    status: DERIVED
+    fallback: "n/a"
+    limitations: "Excess return is not alpha. The benchmark choice is a product decision."
+    sample_tested: {live: false, evidence: [E_UNIT], symbols: []}
+
+  - metric: sector_relative_return
+    category: market
+    canonical_definition: "Stock return minus the return of its sector ETF."
+    source: "derived"
+    provider: derived
+    command: "derived"
+    identifier: "security_id + sector ETF"
+    period: "as price_return"
+    direct_or_derived: derived
+    inputs: [price_return, benchmark_return, nasdaq_sector_industry]
+    formula: "price_return(stock) - price_return(sector ETF)."
+    missing_data_behavior: "No sector (BRK) or no mapped ETF -> MISSING_INPUT."
+    negative_data_behavior: "n/a"
+    restatement_behavior: "Recomputed."
+    status: NOT_VERIFIED
+    fallback: "Compare with the broad benchmark only."
+    limitations: "ETF history works (XLK live) but the Nasdaq-sector -> sector-ETF mapping was not defined or tested; Nasdaq sectors are not GICS so the ETF families do not align one to one."
+    sample_tested: {live: false, evidence: [E_LIVE_R2], symbols: [XLK]}
+
+  - metric: shares_outstanding
+    category: market
+    canonical_definition: "Shares outstanding of the issuer as reported on the cover of its latest periodic filing, with report date."
+    source: "SEC XBRL dei"
+    provider: sec
+    command: "HTTP GET https://data.sec.gov/api/xbrl/companyfacts/CIK##########.json (dei:EntityCommonStockSharesOutstanding: val, end, filed, accn, form)"
+    identifier: cik
+    period: "instant (cover-page date, about 2 weeks after quarter end)"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "Multi-class issuers: GOOGL and META have NO EntityCommonStockSharesOutstanding concept (only EntityPublicFloat); BRK-B's last point is from 2011. Return NULL; never sum or guess."
+    negative_data_behavior: "n/a"
+    restatement_behavior: "One point per filing (accn, filed); latest_known(as_of) selects."
+    status: LIVE_VERIFIED
+    fallback: "Implied shares = Nasdaq market_cap / last_price (all classes at that class's price). Do NOT use OpenBB's TTM weighted_ave_diluted_shares_os: it is about 4x the real count (AAPL TTM 59.1B vs 14.6B outstanding)."
+    limitations: "Single-class issuers only (AAPL verified: 14,594,180,000 at 2026-07-17, 10-Q filed 2026-07-31)."
+    sample_tested: {live: true, evidence: [E_LIVE_R3, E_FIXTURE_LIVE], symbols: [AAPL, GOOGL, BRK-B, META]}
+
+  - metric: quoted_market_cap_per_listing
+    category: market
+    canonical_definition: "The provider's raw market_cap for one quoted listing. Semantics (measured): THAT listing's last price x ALL shares of the issuer. It is neither a security-specific market cap nor a single issuer figure, so it is only an input to issuer_market_cap and is stored raw with its source."
+    source: "Nasdaq quote"
+    provider: nasdaq
+    command: "obb.nasdaq.equity.quote(symbol) (market_cap)"
+    identifier: ticker
+    period: "snapshot (delayed)"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "NULL for some tickers; Cboe's quote market_cap is null."
+    negative_data_behavior: "n/a"
+    restatement_behavior: "Snapshot only; no history. A point-in-time cap must be derived from a historical close and the shares outstanding at that time."
+    status: LIVE_VERIFIED
+    fallback: "close x shares_outstanding for single-class issuers."
+    limitations: "GOOGL 4.137T at 338.24 and GOOG 4.096T at 334.93 imply the same share count (12.23B), so each figure is the class price x all shares; BRK.A 1.106T and BRK.B 1.104T likewise (share-equivalence of BRK.A not verified). Listings must never be summed."
+    sample_tested: {live: true, evidence: [E_LIVE_R3, E_FIXTURE_LIVE], symbols: [AAPL, NVDA, MSFT, GOOGL, GOOG, BRK.A, BRK.B]}
+
+  - metric: issuer_market_cap
+    category: market
+    canonical_definition: "THE canonical market capitalisation of the screening system: one value per issuer (CIK), the quoted figure of the issuer's designated primary listing. Used for every issuer-level valuation (P/S) against issuer-level revenue. Never described as security-specific."
+    source: "derived"
+    provider: derived
+    command: "derived"
+    identifier: cik
+    period: "snapshot"
+    direct_or_derived: derived
+    inputs: [quoted_market_cap_per_listing, share_class]
+    formula: "quoted_market_cap_per_listing of the primary listing; flag MULTI_CLASS_ALL_SHARES_AT_PRIMARY_PRICE when other listings exist. Every listing of the issuer (GOOG and GOOGL) is screened on this one number."
+    missing_data_behavior: "Primary listing figure missing -> MISSING_INPUT; no silent switch to another listing."
+    negative_data_behavior: "Non-positive -> MISSING_INPUT."
+    restatement_behavior: "Snapshot."
+    status: DERIVED
+    fallback: "primary close x shares_outstanding (single-class issuers only)."
+    limitations: "Why issuer level: the screener's valuation inputs (revenue, earnings, debt) are issuer facts keyed by CIK, so the denominator must be issuer-wide; the provider already scales every listing to all shares, and a per-class cap is not computable (GOOGL has no dei shares fact and no per-class share counts exist in the data). The primary-listing choice (e.g. GOOGL for Alphabet, BRK.B for Berkshire) is a configuration decision, not data."
+    rule_function: issuer_market_cap
+    sample_tested: {live: true, evidence: [E_UNIT, E_FIXTURE_LIVE], symbols: [GOOGL, GOOG, BRK.A, BRK.B]}
+
+  - metric: security_market_cap
+    category: market
+    canonical_definition: "Market value of one share class only (shares of that class x that class's price)."
+    source: "none"
+    provider: none
+    command: "none"
+    identifier: security_id
+    period: "snapshot"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "Never invented: NULL."
+    negative_data_behavior: "n/a"
+    restatement_behavior: "n/a"
+    status: UNAVAILABLE
+    fallback: "none; use issuer_market_cap."
+    limitations: "Needs per-class shares outstanding. SEC dei EntityCommonStockSharesOutstanding is absent for GOOGL and META (multi-class, reported per class axis) and stale for BRK-B; no installed provider returns per-class counts."
+    sample_tested: {live: true, evidence: [E_LIVE_R3], symbols: [GOOGL, BRK-B]}
+
+  - metric: average_volume_and_dividend_yield
+    category: market
+    canonical_definition: "Provider-published average volume and dividend fields from the quote."
+    source: "Nasdaq quote"
+    provider: nasdaq
+    command: "obb.nasdaq.equity.quote(symbol) (average_volume, annualized_dividend, dividend_yield, ex_dividend_date)"
+    identifier: ticker
+    period: "snapshot"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "Null for non-payers (RIVN, BRK.B): NULL, not zero."
+    negative_data_behavior: "n/a"
+    restatement_behavior: "Snapshot."
+    status: LIVE_VERIFIED
+    fallback: "obb.nasdaq.equity.fundamental.dividends (API shape only)."
+    limitations: "Averaging window undocumented. Not a point-in-time series."
+    sample_tested: {live: true, evidence: [E_LIVE_R2], symbols: [AAPL, RIVN, BRK.B]}
+
+  # ------------------------------------------------------------------------------------------------ C. income statement
+  - metric: revenue
+    category: income_statement
+    canonical_definition: "Total revenue for a fiscal period (us-gaap Revenues / RevenueFromContractWithCustomerExcludingAssessedTax / SalesRevenueNet, whichever the filer uses)."
+    source: "SEC XBRL companyfacts via OpenBB"
+    provider: sec
+    command: "obb.sec.income_statement(symbol, period=annual|quarterly|ttm, limit, pit_mode, include_preliminary) -> total_revenue"
+    identifier: "ticker or cik"
+    period: "FY, discrete quarter, or TTM; period_ending date + fiscal_period + fiscal_year"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "Absent -> NULL. Tag used per period is reported in results_metadata.fields (AAPL SalesRevenueNet pre-2018, RevenueFromContract... after)."
+    negative_data_behavior: "Negative revenue is returned as is and flagged by the screener as NOT_MEANINGFUL for margins (denominator <= 0)."
+    restatement_behavior: *sec_vintage
+    status: LIVE_VERIFIED
+    fallback: "Raw XBRL companyfacts (same data, with accn/filed) ; Nasdaq statements (obb.nasdaq.equity.fundamental.income, USD thousands, 4 periods, no filing metadata); XBRL frames for one concept across all filers (CY2023 revenue: 3,141 filers)."
+    limitations: "Rows carry NO accession or filing date. Quarterly rows are discrete quarters; Q4 is derived by OpenBB. TTM rows are sums of four quarters. 96 columns, most all-null for any one filer. Nasdaq values are in thousands."
+    sample_tested: {live: true, evidence: [E_LIVE_R2], symbols: [AAPL, MSFT, NVDA, RIVN, PTON, COST, KOSS, GOOGL, BRK-B]}
+
+  - metric: cost_of_revenue
+    category: income_statement
+    canonical_definition: "Cost of revenue for the period."
+    source: "SEC via OpenBB"
+    provider: sec
+    command: "obb.sec.income_statement(...) -> total_cost_of_revenue"
+    identifier: "ticker or cik"
+    period: "FY / quarter / TTM"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "Absent for many financials and for BRK-B (NULL)."
+    negative_data_behavior: "n/a"
+    restatement_behavior: *sec_vintage
+    status: LIVE_VERIFIED
+    fallback: "raw XBRL CostOfRevenue / CostOfGoodsAndServicesSold."
+    limitations: "Definition varies by filer (some include D&A, some not): cross-company gross margin is only roughly comparable."
+    sample_tested: {live: true, evidence: [E_LIVE_R2], symbols: [AAPL, RIVN, NVDA]}
+
+  - metric: gross_profit
+    category: income_statement
+    canonical_definition: "Revenue minus cost of revenue."
+    source: "SEC via OpenBB (direct) else derived"
+    provider: sec
+    command: "obb.sec.income_statement(...) -> total_gross_profit"
+    identifier: "ticker or cik"
+    period: "FY / quarter / TTM"
+    direct_or_derived: direct
+    inputs: []
+    formula: "If total_gross_profit is absent: revenue - cost_of_revenue, flagged. Never when either is missing."
+    missing_data_behavior: "Both absent -> NULL (BRK-B: not reported)."
+    negative_data_behavior: "Negative gross profit is a real value (RIVN FY2024 -1.2B)."
+    restatement_behavior: *sec_vintage
+    status: LIVE_VERIFIED
+    fallback: "gross_profit_from_components(revenue, cost_of_revenue)."
+    limitations: "OpenBB imputes some lines; check results_metadata.fields[*].sources to see what was computed vs reported."
+    rule_function: gross_profit_from_components
+    sample_tested: {live: true, evidence: [E_LIVE_R2, E_FIXTURE_LIVE], symbols: [AAPL, RIVN, NVDA]}
+
+  - metric: operating_income
+    category: income_statement
+    canonical_definition: "Operating income (loss) for the period."
+    source: "SEC via OpenBB"
+    provider: sec
+    command: "obb.sec.income_statement(...) -> total_operating_income"
+    identifier: "ticker or cik"
+    period: "FY / quarter / TTM"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "NULL when absent."
+    negative_data_behavior: "Negative is a real value (RIVN -3.585B)."
+    restatement_behavior: *sec_vintage
+    status: LIVE_VERIFIED
+    fallback: "raw XBRL OperatingIncomeLoss."
+    limitations: "Banks and insurers do not report an operating-income line (JPM uses net interest income and noninterest lines)."
+    sample_tested: {live: true, evidence: [E_LIVE_R2, E_LIVE_R3], symbols: [AAPL, RIVN, BRK-B, JPM]}
+
+  - metric: net_income_attributable_to_parent
+    category: income_statement
+    canonical_definition: "Net income attributable to the parent's common shareholders (us-gaap NetIncomeLoss). The screener's net income."
+    source: "SEC via OpenBB"
+    provider: sec
+    command: "obb.sec.income_statement(...) -> net_income_to_common"
+    identifier: "ticker or cik"
+    period: "FY / quarter / TTM"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "NULL when absent."
+    negative_data_behavior: "Negative is a real loss."
+    restatement_behavior: *sec_vintage
+    status: LIVE_VERIFIED
+    fallback: "raw XBRL NetIncomeLoss (matches this field exactly for RIVN and NVDA)."
+    limitations: "OpenBB's field named net_income is a different number: for RIVN FY2025 net_income = -3,626M (ProfitLoss, includes non-controlling interests) while net_income_to_common = -3,646M (NetIncomeLoss). Use net_income_to_common for margins, EPS and P/E."
+    sample_tested: {live: true, evidence: [E_LIVE_R3, E_FIXTURE_LIVE], symbols: [RIVN, NVDA, BRK-B]}
+
+  - metric: net_income_consolidated
+    category: income_statement
+    canonical_definition: "Net income including non-controlling interests (us-gaap ProfitLoss)."
+    source: "SEC via OpenBB"
+    provider: sec
+    command: "obb.sec.income_statement(...) -> net_income"
+    identifier: "ticker or cik"
+    period: "FY / quarter / TTM"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "NULL when absent."
+    negative_data_behavior: "Negative is a real loss."
+    restatement_behavior: *sec_vintage
+    status: LIVE_VERIFIED
+    fallback: "raw XBRL ProfitLoss."
+    limitations: "Not the basis for per-share metrics. Equal to net_income_to_common when there are no non-controlling interests (NVDA, AAPL)."
+    sample_tested: {live: true, evidence: [E_LIVE_R3, E_FIXTURE_LIVE], symbols: [RIVN, NVDA]}
+
+  - metric: diluted_eps
+    category: income_statement
+    canonical_definition: "Diluted earnings per share for the period, as reported."
+    source: "SEC via OpenBB"
+    provider: sec
+    command: "obb.sec.income_statement(...) -> diluted_eps"
+    identifier: "ticker or cik"
+    period: "FY / quarter; TTM is NOT a reported figure"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "BRK-B returns no EPS at all (not in the non-null fields): NULL. Multi-class issuers report EPS per class; OpenBB returns one value (GOOGL populated)."
+    negative_data_behavior: "Negative EPS is a real loss; growth and P/E treat it as NOT_MEANINGFUL."
+    restatement_behavior: "Per-share values change with splits: NVDA FY2024 = 1.19 (default, post 10:1 split) vs 11.93 (pit_mode, as filed) while FY2023 stays 1.74 on the old basis. Never compare EPS across periods unless both come from the same filing (same_filing_pair)."
+    status: LIVE_VERIFIED
+    fallback: "raw XBRL EarningsPerShareDiluted with accn; or net_income_attributable_to_parent / weighted diluted shares from the same filing."
+    limitations: "Split vintage trap (E_LIVE_R3). TTM EPS from OpenBB equals TTM net income over true shares (AAPL 8.72) but its share field is a four-quarter sum."
+    rule_function: same_filing_pair
+    sample_tested: {live: true, evidence: [E_LIVE_R3, E_FIXTURE_LIVE, E_UNIT], symbols: [NVDA, AAPL, RIVN, BRK-B]}
+
+  - metric: weighted_average_diluted_shares
+    category: income_statement
+    canonical_definition: "Weighted-average diluted shares for the period."
+    source: "SEC via OpenBB"
+    provider: sec
+    command: "obb.sec.income_statement(...) -> weighted_ave_diluted_shares_os"
+    identifier: "ticker or cik"
+    period: "FY / discrete quarter. NOT TTM."
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "NULL for BRK-B."
+    negative_data_behavior: "n/a"
+    restatement_behavior: *sec_vintage
+    status: LIVE_VERIFIED
+    fallback: "raw XBRL WeightedAverageNumberOfDilutedSharesOutstanding."
+    limitations: "TTM rows are the SUM of four quarters (AAPL 59,114,516,000 vs 14,594,180,000 outstanding): invalid, and the screener must reject period=ttm for this field."
+    sample_tested: {live: true, evidence: [E_LIVE_R2, E_FIXTURE_LIVE], symbols: [AAPL, RIVN]}
+
+  - metric: ebitda
+    category: income_statement
+    canonical_definition: "Operating income plus depreciation and amortization."
+    source: "derived"
+    provider: derived
+    command: "obb.sec.income_statement(...) -> total_operating_income + depreciation_and_amortization"
+    identifier: "ticker or cik"
+    period: "FY / quarter / TTM (additive)"
+    direct_or_derived: derived
+    inputs: [operating_income]
+    formula: "operating_income + depreciation_and_amortization; both required."
+    missing_data_behavior: "Either missing -> MISSING_INPUT."
+    negative_data_behavior: "Negative EBITDA is a value; ratios with it as a denominator are NOT_MEANINGFUL."
+    restatement_behavior: *sec_vintage
+    status: NOT_VERIFIED
+    fallback: "none"
+    limitations: "depreciation_and_amortization exists for NVDA, GOOGL, RIVN, BRK-B and JPM (field list, E_LIVE_R3) but its definition was not cross-checked against the filings. No rule function written yet."
+    sample_tested: {live: true, evidence: [E_LIVE_R3], symbols: [NVDA, GOOGL, RIVN]}
+
+  # ------------------------------------------------------------------------------------------------ D. cash flow
+  - metric: operating_cash_flow
+    category: cash_flow
+    canonical_definition: "Net cash provided by operating activities for the period."
+    source: "SEC via OpenBB"
+    provider: sec
+    command: "obb.sec.cash_flow(symbol, period=annual|quarterly|ttm) -> net_cash_from_operating_activities"
+    identifier: "ticker or cik"
+    period: "FY, discrete quarter, TTM"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "NULL when absent."
+    negative_data_behavior: "Negative is a real value."
+    restatement_behavior: *sec_vintage
+    status: LIVE_VERIFIED
+    fallback: "raw XBRL NetCashProvidedByUsedInOperatingActivities (filers report year-to-date; discrete quarters need subtraction)."
+    limitations: "Quarterly rows are discrete: AAPL Q1+Q2+Q3 FY26 plus Q4 FY25 = 146,724M = the TTM figure exactly (E_LIVE_R3, E_FIXTURE_LIVE)."
+    sample_tested: {live: true, evidence: [E_LIVE_R2, E_LIVE_R3], symbols: [AAPL, RIVN, KOSS, BRK-B]}
+
+  - metric: capital_expenditures
+    category: cash_flow
+    canonical_definition: "Cash paid for property, plant and equipment, as a positive magnitude."
+    source: "SEC via OpenBB"
+    provider: sec
+    command: "obb.sec.cash_flow(...) -> purchase_of_plant_property_and_equipment (returned NEGATIVE)"
+    identifier: "ticker or cik"
+    period: "FY / TTM; quarterly capex field was null for AAPL"
+    direct_or_derived: direct
+    inputs: []
+    formula: "capex = abs(purchase_of_plant_property_and_equipment)"
+    missing_data_behavior: "Absent is NOT zero: free_cash_flow returns MISSING_INPUT. The quarterly AAPL rows had this field null in the fields probed (the field name used may be wrong: NOT_VERIFIED for quarterly)."
+    negative_data_behavior: "Sign is normalised by magnitude."
+    restatement_behavior: *sec_vintage
+    status: LIVE_VERIFIED
+    fallback: "raw XBRL PaymentsToAcquirePropertyPlantAndEquipment (positive) ; add PaymentsToAcquireProductiveAssets variants."
+    limitations: "Capex definitions differ (software capitalisation, finance leases). AAPL FY2025 -12,715M; TTM -10,041M."
+    sample_tested: {live: true, evidence: [E_LIVE_R2, E_FIXTURE_LIVE], symbols: [AAPL]}
+
+  - metric: free_cash_flow
+    category: cash_flow
+    canonical_definition: "Operating cash flow minus capital expenditures. The ONLY free-cash-flow definition."
+    source: "derived"
+    provider: derived
+    command: "derived"
+    identifier: "ticker or cik"
+    period: "FY or TTM (same period for both inputs)"
+    direct_or_derived: derived
+    inputs: [operating_cash_flow, capital_expenditures]
+    formula: "FCF = operating_cash_flow - abs(capex)"
+    missing_data_behavior: "Either input missing -> MISSING_INPUT (CAPEX_NOT_REPORTED). Absent capex is never assumed zero."
+    negative_data_behavior: "Negative FCF is valid."
+    restatement_behavior: "Inputs from the same vintage."
+    status: DERIVED
+    fallback: "none"
+    limitations: "Excludes acquisitions and leases. Stock-based comp is not removed."
+    rule_function: free_cash_flow
+    sample_tested: {live: true, evidence: [E_UNIT, E_FIXTURE_LIVE], symbols: [AAPL]}
+
+  # ------------------------------------------------------------------------------------------------ E. balance sheet
+  - metric: cash_and_short_term_investments
+    category: balance_sheet
+    canonical_definition: "Cash and equivalents; short-term investments reported separately."
+    source: "SEC via OpenBB"
+    provider: sec
+    command: "obb.sec.balance_sheet(symbol, period) -> cash_and_equivalents, short_term_investments"
+    identifier: "ticker or cik"
+    period: "instant at period_ending"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "short_term_investments NULL means none reported (BRK-B)."
+    negative_data_behavior: "n/a"
+    restatement_behavior: *sec_vintage
+    status: LIVE_VERIFIED
+    fallback: "raw XBRL CashAndCashEquivalentsAtCarryingValue, ShortTermInvestments."
+    limitations: "Long-term marketable securities (large at AAPL/MSFT) are not included, so net debt is conservative."
+    sample_tested: {live: true, evidence: [E_LIVE_R2], symbols: [AAPL, RIVN, KOSS, BRK-B]}
+
+  - metric: debt_components
+    category: balance_sheet
+    canonical_definition: "short_term_debt, current_portion_of_long_term_debt, long_term_debt (and finance lease liabilities where present)."
+    source: "SEC via OpenBB"
+    provider: sec
+    command: "obb.sec.balance_sheet(...) -> short_term_debt, current_portion_of_long_term_debt, long_term_debt, capital_lease_obligations"
+    identifier: "ticker or cik"
+    period: "instant"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "Absent line = the extraction did not return it. It is NOT zero and NOT evidence of no debt: total_debt is MISSING_INPUT unless all three core lines are reported or the filing explicitly says there is no debt."
+    negative_data_behavior: "A negative component -> NOT_MEANINGFUL."
+    restatement_behavior: *sec_vintage
+    status: LIVE_VERIFIED
+    fallback: "raw XBRL LongTermDebtNoncurrent, LongTermDebtCurrent, ShortTermBorrowings, DebtCurrent."
+    limitations: "AAPL FY2025: 7,979M + 12,350M + 78,328M. BRK-B shows none of the three lines on a USD 1.2T balance sheet (company_type 'diversified'): absent is not zero. Operating-lease liabilities are deliberately excluded."
+    sample_tested: {live: true, evidence: [E_LIVE_R2, E_LIVE_R3, E_FIXTURE_LIVE], symbols: [AAPL, RIVN, KOSS, BRK-B]}
+
+  - metric: company_type
+    category: balance_sheet
+    canonical_definition: "OpenBB/SEC statement template for the filer: industrial, financial, diversified (others not seen)."
+    source: "SEC via OpenBB"
+    provider: sec
+    command: "obb.sec.income_statement(...).extra['results_metadata']['company_type']"
+    identifier: cik
+    period: "snapshot"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "Informational only: no metric rule depends on it (it no longer influences debt)."
+    negative_data_behavior: "n/a"
+    restatement_behavior: "Snapshot."
+    status: LIVE_VERIFIED
+    fallback: "SIC code (6xxx = finance/insurance/real estate)."
+    limitations: "Seen: AAPL, GOOGL, NVDA, RIVN industrial; JPM financial (different field set: net interest income, provision for credit losses); BRK-B diversified. Insurers/REITs/utilities not sampled."
+    sample_tested: {live: true, evidence: [E_LIVE_R3, E_FIXTURE_LIVE], symbols: [AAPL, GOOGL, NVDA, RIVN, BRK-B, JPM]}
+
+  - metric: total_debt
+    category: balance_sheet
+    canonical_definition: "short_term_debt + current_portion_of_long_term_debt + long_term_debt + finance leases. Operating leases excluded."
+    source: "derived"
+    provider: derived
+    command: "derived"
+    identifier: "ticker or cik"
+    period: "instant"
+    direct_or_derived: derived
+    inputs: [debt_components]
+    formula: "short_term_debt + current_portion_of_long_term_debt + long_term_debt (+ finance_lease_liabilities when reported). Zero ONLY if every core line is explicitly reported (0 is a value) or the filing explicitly evidences no debt (explicit_no_debt_evidence). Never zero because a line is absent."
+    missing_data_behavior: "Any core component absent (and no explicit no-debt evidence) -> MISSING_INPUT (DEBT_COMPONENT_ABSENT:<names>): a partial sum is a lower bound, not the debt. No balance sheet -> MISSING_INPUT. Contradictory no-debt evidence -> NOT_MEANINGFUL. Finance leases absent: left out, flag FINANCE_LEASES_NOT_REPORTED."
+    negative_data_behavior: "Negative component -> NOT_MEANINGFUL."
+    restatement_behavior: "Same vintage for all components."
+    status: DERIVED
+    fallback: "none"
+    limitations: "Banks' deposits and funding are not debt in this definition; leverage metrics are not meaningful for financials."
+    rule_function: total_debt
+    sample_tested: {live: true, evidence: [E_UNIT, E_FIXTURE_LIVE], symbols: [AAPL, BRK-B]}
+
+  - metric: net_debt
+    category: balance_sheet
+    canonical_definition: "total_debt minus cash_and_equivalents minus short_term_investments. Negative = net cash."
+    source: "derived"
+    provider: derived
+    command: "derived"
+    identifier: "ticker or cik"
+    period: "instant"
+    direct_or_derived: derived
+    inputs: [total_debt, cash_and_short_term_investments]
+    formula: "total_debt - cash_and_equivalents - short_term_investments (short-term investments absent = 0, flagged)."
+    missing_data_behavior: "total_debt non-OK or cash missing -> MISSING_INPUT."
+    negative_data_behavior: "Negative net debt is valid (net cash)."
+    restatement_behavior: "Same vintage."
+    status: DERIVED
+    fallback: "none"
+    limitations: "Excludes long-term investments."
+    rule_function: net_debt
+    sample_tested: {live: true, evidence: [E_UNIT, E_FIXTURE_LIVE], symbols: [AAPL]}
+
+  - metric: debt_to_equity
+    category: balance_sheet
+    canonical_definition: "total_debt divided by total stockholders' equity."
+    source: "derived"
+    provider: derived
+    command: "derived"
+    identifier: "ticker or cik"
+    period: "instant"
+    direct_or_derived: derived
+    inputs: [total_debt, total_equity]
+    formula: "total_debt / total_equity (total_equity = parent common equity, total_common_equity)."
+    missing_data_behavior: "Either missing -> MISSING_INPUT."
+    negative_data_behavior: "Equity <= 0 -> NOT_MEANINGFUL (a negative ratio would rank a distressed company as unlevered); zero equity -> ZERO_DENOMINATOR."
+    restatement_behavior: "Same vintage."
+    status: DERIVED
+    fallback: "none"
+    limitations: "Buyback-heavy filers can show tiny or negative equity (AAPL equity 73.7B on 359B assets is low)."
+    rule_function: debt_to_equity
+    sample_tested: {live: true, evidence: [E_UNIT, E_FIXTURE_LIVE], symbols: [AAPL]}
+
+  - metric: total_equity
+    category: balance_sheet
+    canonical_definition: "Total common equity attributable to the parent at period end."
+    source: "SEC via OpenBB"
+    provider: sec
+    command: "obb.sec.balance_sheet(...) -> total_common_equity (and total_equity)"
+    identifier: "ticker or cik"
+    period: "instant"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "NULL."
+    negative_data_behavior: "Negative equity is real; see debt_to_equity."
+    restatement_behavior: *sec_vintage
+    status: LIVE_VERIFIED
+    fallback: "raw XBRL StockholdersEquity."
+    limitations: "total_liabilities_and_shareholders_equity was null in the rows probed."
+    sample_tested: {live: true, evidence: [E_LIVE_R2], symbols: [AAPL, BRK-B, RIVN]}
+
+  - metric: leverage_trend
+    category: balance_sheet
+    canonical_definition: "Change in debt_to_equity between two balance-sheet dates one year apart."
+    source: "derived"
+    provider: derived
+    command: "derived"
+    identifier: "ticker or cik"
+    period: "year over year"
+    direct_or_derived: derived
+    inputs: [debt_to_equity]
+    formula: "debt_to_equity(now) - debt_to_equity(one year earlier), both OK and from comparable fiscal dates."
+    missing_data_behavior: "Either non-OK -> that state."
+    negative_data_behavior: "See debt_to_equity."
+    restatement_behavior: "Use the same vintage for both."
+    status: DERIVED
+    fallback: "none"
+    limitations: "No dedicated rule function; compose debt_to_equity results. Net-debt change is the alternative."
+    sample_tested: {live: false, evidence: [E_UNIT], symbols: []}
+
+  # ------------------------------------------------------------------------------------------------ F. derived ratios and growth
+  - metric: revenue_growth_yoy
+    category: derived
+    canonical_definition: "(revenue now / revenue same period one year earlier) - 1, for a fiscal year or a discrete quarter."
+    source: "derived"
+    provider: derived
+    command: "derived"
+    identifier: "ticker or cik"
+    period: "FY vs prior FY; quarter vs same quarter prior year"
+    direct_or_derived: derived
+    inputs: [revenue]
+    formula: "growth_rate(current, prior) = current/prior - 1, only if prior > 0 and current >= 0."
+    missing_data_behavior: "Either missing -> MISSING_INPUT."
+    negative_data_behavior: "prior == 0 -> ZERO_DENOMINATOR; prior < 0 -> NOT_MEANINGFUL (NEGATIVE_BASE); prior <= 0 and current > 0 (or sign flip) -> NOT_MEANINGFUL (SIGN_CHANGE). Never negative->positive growth, never 0->positive as a percentage."
+    restatement_behavior: "Use same_filing_pair so both periods are on one basis; comparability checked with comparable_year_over_year."
+    status: DERIVED
+    fallback: "none"
+    limitations: "Acquisitions inflate growth: no M&A adjustment is available from any provider (NOT_COMPARABLE cannot be detected; flag only through a human)."
+    rule_function: growth_rate
+    sample_tested: {live: true, evidence: [E_UNIT, E_FIXTURE_LIVE], symbols: [NVDA, RIVN]}
+
+  - metric: revenue_growth_ttm_yoy
+    category: derived
+    canonical_definition: "TTM revenue now vs TTM revenue four quarters earlier."
+    source: "derived"
+    provider: derived
+    command: "obb.sec.income_statement(period=ttm) or sum of four discrete quarters"
+    identifier: "ticker or cik"
+    period: "TTM vs TTM one year earlier"
+    direct_or_derived: derived
+    inputs: [revenue]
+    formula: "growth_rate(TTM_now, TTM_prior)"
+    missing_data_behavior: "Fewer than four consecutive quarters -> MISSING_INPUT."
+    negative_data_behavior: "As revenue_growth_yoy."
+    restatement_behavior: "Quarters from one vintage."
+    status: DERIVED
+    fallback: "sum of four discrete quarters."
+    limitations: "TTM windows spanning a fiscal-year change or a 53-week year are NOT_COMPARABLE."
+    rule_function: growth_rate
+    sample_tested: {live: true, evidence: [E_LIVE_R2, E_UNIT], symbols: [AAPL]}
+
+  - metric: eps_growth_yoy
+    category: derived
+    canonical_definition: "Growth of diluted EPS (or of net income attributable to parent) between comparable periods."
+    source: "derived"
+    provider: derived
+    command: "derived"
+    identifier: "ticker or cik"
+    period: "FY vs prior FY; quarter vs same quarter prior year"
+    direct_or_derived: derived
+    inputs: [diluted_eps, net_income_attributable_to_parent]
+    formula: "growth_rate(eps_now, eps_prior) where both come from the same filing (same_filing_pair)."
+    missing_data_behavior: "No filing carries both -> MISSING_INPUT."
+    negative_data_behavior: "Loss in either period -> NOT_MEANINGFUL: -3.07 vs -4.69 (RIVN) is not growth; loss to profit is SIGN_CHANGE; 0 prior is ZERO_DENOMINATOR."
+    restatement_behavior: "Split vintages mix bases (NVDA); same_filing_pair is required."
+    status: DERIVED
+    fallback: "net income growth with the same rules."
+    limitations: "Naive growth on OpenBB default rows gives NVDA FY2024 EPS growth of -31.6% while net income grew 581% (E_LIVE_R3)."
+    rule_function: same_filing_pair
+    sample_tested: {live: true, evidence: [E_LIVE_R3, E_UNIT], symbols: [NVDA, RIVN]}
+
+  - metric: margins
+    category: derived
+    canonical_definition: "gross, operating, net (attributable to parent) and FCF margin: numerator / revenue."
+    source: "derived"
+    provider: derived
+    command: "derived"
+    identifier: "ticker or cik"
+    period: "same period for numerator and revenue"
+    direct_or_derived: derived
+    inputs: [gross_profit, operating_income, net_income_attributable_to_parent, free_cash_flow, revenue]
+    formula: "margin(numerator, revenue) = numerator / revenue"
+    missing_data_behavior: "Either missing -> MISSING_INPUT."
+    negative_data_behavior: "revenue == 0 -> ZERO_DENOMINATOR; revenue < 0 -> NOT_MEANINGFUL; a negative numerator gives a legitimate negative margin (RIVN gross margin -24.1% in FY2024)."
+    restatement_behavior: "Same vintage."
+    status: DERIVED
+    fallback: "none"
+    limitations: "Cross-company margins depend on each filer's cost classification."
+    rule_function: margin
+    sample_tested: {live: true, evidence: [E_UNIT, E_FIXTURE_LIVE], symbols: [RIVN]}
+
+  - metric: margin_change
+    category: derived
+    canonical_definition: "Change in a margin between comparable periods, in percentage points."
+    source: "derived"
+    provider: derived
+    command: "derived"
+    identifier: "ticker or cik"
+    period: "year over year"
+    direct_or_derived: derived
+    inputs: [margins]
+    formula: "margin_now - margin_prior (both OK)."
+    missing_data_behavior: "Either non-OK -> that state."
+    negative_data_behavior: "Margins can be negative; the difference stays defined."
+    restatement_behavior: "Same vintage."
+    status: DERIVED
+    fallback: "none"
+    limitations: "Percentage points, not percent."
+    rule_function: margin_change
+    sample_tested: {live: true, evidence: [E_UNIT, E_FIXTURE_LIVE], symbols: [RIVN]}
+
+  - metric: price_to_sales
+    category: derived
+    canonical_definition: "Issuer market cap divided by TTM revenue."
+    source: "derived"
+    provider: derived
+    command: "derived"
+    identifier: cik
+    period: "snapshot market cap / TTM revenue"
+    direct_or_derived: derived
+    inputs: [issuer_market_cap, revenue]
+    formula: "market_cap / revenue_ttm"
+    missing_data_behavior: "Either missing -> MISSING_INPUT."
+    negative_data_behavior: "revenue_ttm <= 0 -> NOT_MEANINGFUL; zero -> ZERO_DENOMINATOR."
+    restatement_behavior: "TTM from the latest vintage known as of the market-cap date."
+    status: DERIVED
+    fallback: "none"
+    limitations: "Mixing a delayed market cap with a TTM that may be 3 months stale; record both dates."
+    rule_function: price_to_sales
+    sample_tested: {live: false, evidence: [E_UNIT], symbols: []}
+
+  - metric: price_to_earnings
+    category: derived
+    canonical_definition: "Price divided by trailing diluted EPS."
+    source: "derived"
+    provider: derived
+    command: "derived"
+    identifier: "security_id"
+    period: "price at as_of / TTM diluted EPS"
+    direct_or_derived: derived
+    inputs: [price_current_delayed, diluted_eps]
+    formula: "price / eps_ttm, EPS = sum of four discrete quarterly diluted EPS or TTM net income to common / current shares."
+    missing_data_behavior: "Missing -> MISSING_INPUT. BRK-B has no EPS: MISSING_INPUT."
+    negative_data_behavior: "EPS <= 0 -> NOT_MEANINGFUL (loss-making: no P/E); never a negative P/E."
+    restatement_behavior: "Per-share basis must match the price basis (split)."
+    status: DERIVED
+    fallback: "market_cap / net_income_attributable_to_parent (TTM)."
+    limitations: "Multi-class EPS differs by class; use the class priced."
+    rule_function: price_to_earnings
+    sample_tested: {live: true, evidence: [E_UNIT, E_FIXTURE_LIVE], symbols: [RIVN]}
+
+  - metric: comparability_year_over_year
+    category: derived
+    canonical_definition: "Whether two reporting periods may be compared year over year at all."
+    source: "derived"
+    provider: derived
+    command: "derived"
+    identifier: "period_start, period_end of each point"
+    period: "pair of periods"
+    direct_or_derived: derived
+    inputs: []
+    formula: "period_kind(start,end) of both must match and not be OTHER; period ends 350-380 days apart. QUARTER 84-98 days, FISCAL_YEAR 350-380 days (covers 52/53-week years), YTD kinds are never compared with discrete quarters."
+    missing_data_behavior: "Missing period start for a duration fact -> treated as INSTANT: caller must pass starts."
+    negative_data_behavior: "n/a"
+    restatement_behavior: "n/a"
+    status: DERIVED
+    fallback: "none"
+    limitations: "Cannot detect acquisitions, divestitures or accounting-standard changes: those need human review. Transition periods (10-KT) classify as OTHER and are NOT_COMPARABLE."
+    rule_function: comparable_year_over_year
+    sample_tested: {live: false, evidence: [E_UNIT], symbols: []}
+
+  # ------------------------------------------------------------------------------------------------ G. filings
+  - metric: filing_index
+    category: filings
+    canonical_definition: "One row per SEC filing: accession, form, filing date, report date, primary document, URL, 8-K item codes, XBRL flag."
+    source: "SEC EDGAR"
+    provider: sec
+    command: "obb.sec.company_filings(symbol|cik, form_type, limit)"
+    identifier: "cik (pass as str; int raises TypeError); ticker also accepted"
+    period: "event dates (filing_date, report_date)"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "primary_doc_description and items empty strings when none."
+    negative_data_behavior: "n/a"
+    restatement_behavior: "Append-only: an amendment is a NEW filing with its own accession, never an edit of the original."
+    status: LIVE_VERIFIED
+    fallback: "HTTP GET https://data.sec.gov/submissions/CIK##########.json: recent array plus paginated older files (META: 1002 recent rows and two older pages back to 2005); also gives acceptanceDateTime (FIXTURE_VERIFIED only), isXBRL, items."
+    limitations: "Output columns: filing_date, report_date, report_type, accession_number, primary_doc, primary_doc_description, items, is_xbrl, report_url (no acceptance time, no amends link). form_type filter accepts only listed values (no '10-K/A', '10-Q/A'): E_LIVE_R2."
+    sample_tested: {live: true, evidence: [E_LIVE_R2, E_FIXTURE_OPENBB], symbols: [AAPL, META, BRK-B, TWTR]}
+
+  - metric: amended_filing_flag
+    category: filings
+    canonical_definition: "True when a filing's form code ends with '/A' (10-K/A, 10-Q/A, 8-K/A, SC 13G/A, 144/A)."
+    source: "derived"
+    provider: derived
+    command: "client-side filter on company_filings report_type (OpenBB's form_type parameter rejects '10-K/A')"
+    identifier: accession
+    period: "event"
+    direct_or_derived: derived
+    inputs: [filing_index]
+    formula: "form.endswith('/A')"
+    missing_data_behavior: "NULL form -> NULL."
+    negative_data_behavior: "n/a"
+    restatement_behavior: "An amendment does not delete the original. Whether it restates numbers depends on its contents (many are Part III only): facts are taken from XBRL points keyed by accession, not assumed from the form."
+    status: DERIVED
+    fallback: "submissions JSON form values."
+    limitations: "Amendments seen live: AMD 10-K/A filed 2026-02-04 (accession 0000002488-26-000021), TSLA 10-K/A 2026-04-30 and 2025-04-30, Google Inc. (old CIK) 10-K/A 2016-03-29. Link from an amendment to its original is not provided."
+    sample_tested: {live: true, evidence: [E_LIVE_R2, E_FIXTURE_LIVE], symbols: [AMD, TSLA, AAPL]}
+
+  - metric: filing_acceptance_datetime
+    category: filings
+    canonical_definition: "Instant a filing was accepted by the SEC (acceptanceDateTime)."
+    source: "SEC EDGAR submissions"
+    provider: sec
+    command: "HTTP GET https://data.sec.gov/submissions/CIK##########.json (filings.recent.acceptanceDateTime)"
+    identifier: accession
+    period: "event timestamp"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "n/a"
+    negative_data_behavior: "n/a"
+    restatement_behavior: "Immutable."
+    status: FIXTURE_VERIFIED
+    fallback: "filing_date (day granularity): point-in-time reads treat a fact as known on its filed date."
+    limitations: "Present in the recorded AAPL submissions fixture; OpenBB's company_filings does NOT expose it. Not needed for day-level point-in-time; required only for intraday event ordering."
+    sample_tested: {live: false, evidence: [E_FIXTURE_OPENBB], symbols: [AAPL]}
+
+  - metric: xbrl_fact_point
+    category: filings
+    canonical_definition: "One as-reported XBRL fact: concept, unit, value, period start/end, form, fiscal year/period, accession, filed date."
+    source: "SEC XBRL companyfacts / frames"
+    provider: sec
+    command: "HTTP GET https://data.sec.gov/api/xbrl/companyfacts/CIK##########.json ; https://data.sec.gov/api/xbrl/frames/us-gaap/{tag}/USD/CY2023.json"
+    identifier: "cik + taxonomy + concept + unit + period + accn (canonical provenance layer: see sec_provenance)"
+    period: "duration or instant"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "Tag missing for a filer -> no point; try the alternate tag list (revenue has three)."
+    negative_data_behavior: "Values as reported (sign convention per tag)."
+    restatement_behavior: "Every vintage kept: keys accn, end, filed, form, fp, frame, fy, start, val (raw_facts, E_LIVE_R2)."
+    status: LIVE_VERIFIED
+    fallback: "OpenBB statements (loses accn/filed)."
+    limitations: "One companyfacts file is 3.8 MB for AAPL; frames give one concept for all filers (3,141 revenue points for CY2023) and are the cheapest cross-sectional pull but carry only the latest value per filer/period."
+    sample_tested: {live: true, evidence: [E_LIVE_R2, E_FIXTURE_OPENBB], symbols: [AAPL, RIVN, KOSS, NVDA]}
+
+  # ------------------------------------------------------------------------------------------------ H. insiders
+  - metric: insider_transactions
+    category: ownership
+    canonical_definition: "One row per Form 3/4/5 transaction line: filing date, transaction date, owner, role, security, shares, price, A/D, post-transaction holdings, direct/indirect, form URL."
+    source: "SEC Forms 3/4/5"
+    provider: sec
+    command: "obb.sec.insider_trading(symbol, start_date, end_date)"
+    identifier: "cik of issuer; owner by name"
+    period: "event: transaction_date and filing_date"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "transaction_value always null (derive price x shares); owner CIK may be null; 10b5-1 flag NOT exposed by OpenBB (raw XML has aff10b5One, FIXTURE_VERIFIED)."
+    negative_data_behavior: "n/a"
+    restatement_behavior: "Amended Form 4/A is a separate filing; duplicate-looking rows exist inside one filing (two identical RSU grant lines), so line number is part of the key."
+    status: LIVE_VERIFIED
+    fallback: "Nasdaq insider feed (obb.nasdaq.equity.ownership.insider_trading): no filing date, URL, owner CIK, A/D flag or post-holdings."
+    limitations: "transaction_type is the SEC's description text, not the code letter: classify_form4_description maps it back. Each Form 4 is a separate download (rate-limited, default window 120 days). Derivative rows (RSUs, options) are mixed in (14 of 24 AAPL rows)."
+    sample_tested: {live: true, evidence: [E_LIVE_R2, E_FIXTURE_OPENBB, E_FIXTURE_LIVE], symbols: [AAPL, NVDA]}
+
+  - metric: insider_transaction_class
+    category: ownership
+    canonical_definition: "Economic class of an insider line: OPEN_MARKET_BUY, OPEN_MARKET_SELL, OPTION_EXERCISE_OR_CONVERSION, AWARD, TAX_WITHHOLDING, GIFT, DISPOSITION_TO_ISSUER, CORPORATE_ACTION, EXPIRATION_OR_CANCELLATION, DISCRETIONARY_PLAN_TRADE, OTHER, UNKNOWN. Only open-market buys and sells are market signals."
+    source: "derived"
+    provider: derived
+    command: "derived from transactionCode (raw) or OpenBB's description text"
+    identifier: "transaction line"
+    period: "event"
+    direct_or_derived: derived
+    inputs: [insider_transactions]
+    formula: "P -> OPEN_MARKET_BUY, S -> OPEN_MARKET_SELL, M/X/C/O -> exercise, A -> AWARD, F -> TAX_WITHHOLDING, G -> GIFT, D, U, E/H, I, J/K/L/V/W/Z per table; unknown text -> UNKNOWN."
+    missing_data_behavior: "No code or text -> UNKNOWN."
+    negative_data_behavior: "n/a"
+    restatement_behavior: "Recomputed from the stored code."
+    status: DERIVED
+    fallback: "none"
+    limitations: "AAPL sample: 24 rows, only 8 open-market sales, 13 awards, 2 exercises, 1 tax withholding; a naive 'net sells' count overstates signal. Nasdaq's 'Automatic Sell' is mapped to OPEN_MARKET_SELL (only label observed)."
+    rule_function: classify_form4_description
+    sample_tested: {live: true, evidence: [E_LIVE_R2, E_FIXTURE_OPENBB, E_UNIT], symbols: [AAPL, NVDA]}
+
+  # ------------------------------------------------------------------------------------------------ I. institutional
+  - metric: institutional_holders_nasdaq
+    category: ownership
+    canonical_definition: "Institutional holders of one stock: holder name, report date, shares held, change, market value."
+    source: "Nasdaq (13F aggregation)"
+    provider: nasdaq
+    command: "obb.nasdaq.equity.ownership.institutional(symbol)"
+    identifier: "ticker"
+    period: "13F quarter (date per row)"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "cik column always null; shares_change_percent null for new positions; market_value null for sold-out."
+    negative_data_behavior: "shares_change negative for reductions."
+    restatement_behavior: "Report date per row; 13F-HR/A amendments are not distinguished."
+    status: LIVE_VERIFIED
+    fallback: "SEC 13F per filer (below) - cannot be reversed to 'who holds AAPL' without scanning every filer."
+    limitations: "Rows from different quarters are mixed (Vanguard Group Inc 2025-12-31 vs others 2026-06-30): consistent_report_period must pass before aggregating. market_value is in USD thousands. 50 rows per call; no holder CIK so no join to SEC filers."
+    rule_function: consistent_report_period
+    sample_tested: {live: true, evidence: [E_LIVE_R2, E_FIXTURE_LIVE], symbols: [AAPL]}
+
+  - metric: institutional_13f_holdings_sec
+    category: ownership
+    canonical_definition: "All positions of one 13F filer for one quarter: issuer, CUSIP, class, value, shares, weight."
+    source: "SEC Form 13F-HR"
+    provider: sec
+    command: "obb.sec.form_13f(symbol|cik) ; obb.sec.institutions_search(query)"
+    identifier: "filer cik (e.g. Berkshire 0001067983)"
+    period: "quarter end (2026-06-30 for BRK-B)"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "13F lists CUSIPs, not tickers or CIKs: mapping to securities needs a CUSIP source that is UNAVAILABLE in the installed providers."
+    negative_data_behavior: "n/a"
+    restatement_behavior: "13F-HR/A filed separately; value units differ by filing era."
+    status: LIVE_VERIFIED
+    fallback: "Nasdaq institutional list."
+    limitations: "Berkshire's report returned 29 holdings, total 299.25B. Issuer-centric queries (all holders of AAPL) are not provided by SEC. institutions_search('vanguard') returned 233 filers (name and CIK only)."
+    sample_tested: {live: true, evidence: [E_LIVE_R2, E_FIXTURE_OPENBB], symbols: [BRK-B]}
+
+  # ------------------------------------------------------------------------------------------------ J. earnings
+  - metric: earnings_calendar
+    category: earnings
+    canonical_definition: "Scheduled and recent earnings dates with consensus EPS and market cap."
+    source: "Nasdaq"
+    provider: nasdaq
+    command: "obb.nasdaq.equity.calendar.earnings(start_date, end_date)"
+    identifier: ticker
+    period: "report_date; period_ending as 'YYYY-MM' (month granularity)"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "eps_actual and consensus often null; reporting_time 'not-supplied'."
+    negative_data_behavior: "n/a"
+    restatement_behavior: "Dates move; keep each retrieval."
+    status: LIVE_VERIFIED
+    fallback: "SEC 8-K Item 2.02 filings give the actual release date after the fact (AAPL 45 in history; 2026-07-30 latest)."
+    limitations: "Consensus (eps_consensus) is a vendor number: not stored as estimate history. period_ending parsed with parse_month_year (month end approximation)."
+    sample_tested: {live: true, evidence: [E_LIVE_R2], symbols: [AAPL, MSFT, NVDA]}
+
+  - metric: earnings_eps_history
+    category: earnings
+    canonical_definition: "Reported EPS versus the consensus estimate for recent quarters."
+    source: "Nasdaq"
+    provider: nasdaq
+    command: "obb.nasdaq.equity.fundamental.historical_eps(symbol)"
+    identifier: ticker
+    period: "fiscal_period_ending as 'Jun 2026'"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "NULL when absent."
+    negative_data_behavior: "Negative actual EPS valid; surprise_percent sign follows the vendor."
+    restatement_behavior: "Vendor basis (adjusted EPS) can differ from GAAP diluted EPS: AAPL 2026-07-30 actual 1.91."
+    status: LIVE_VERIFIED
+    fallback: "SEC diluted_eps (GAAP) from statements."
+    limitations: "Four quarters only. Vendor EPS may be non-GAAP: do not mix with filing EPS."
+    sample_tested: {live: true, evidence: [E_LIVE_R2], symbols: [AAPL, RIVN]}
+
+  - metric: earnings_release_event
+    category: earnings
+    canonical_definition: "An 8-K carrying Item 2.02 (results of operations) as the objective record that earnings were released."
+    source: "SEC 8-K"
+    provider: sec
+    command: "obb.sec.company_filings(form_type='8-K') filtered on items containing 2.02"
+    identifier: "cik + accession"
+    period: "event date"
+    direct_or_derived: derived
+    inputs: [filing_index]
+    formula: "items.split(',') contains '2.02'"
+    missing_data_behavior: "n/a"
+    negative_data_behavior: "n/a"
+    restatement_behavior: "8-K/A listed separately."
+    status: DERIVED
+    fallback: "earnings_calendar dates."
+    limitations: "Item 2.02 exists for AAPL (45), MSFT (24), NVDA (25) in the returned history; item content (the press release exhibit) is not parsed."
+    sample_tested: {live: true, evidence: [E_LIVE_R2], symbols: [AAPL, MSFT, NVDA]}
+
+  - metric: guidance
+    category: earnings
+    canonical_definition: "Company guidance for future revenue/EPS."
+    source: "none"
+    provider: none
+    command: "none"
+    identifier: "cik"
+    period: "forward-looking"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "Never fabricated; always NULL/UNAVAILABLE."
+    negative_data_behavior: "n/a"
+    restatement_behavior: "n/a"
+    status: UNAVAILABLE
+    fallback: "Free-text in 8-K Item 2.02 exhibits (not parsed; out of scope)."
+    limitations: "No installed provider returns guidance. Analyst consensus (obb.nasdaq.equity.estimates.consensus / price_target) exists in the API reference but was not sampled (NOT_VERIFIED)."
+    sample_tested: {live: false, evidence: [E_SHAPE], symbols: []}
+
+  # ------------------------------------------------------------------------------------------------ K. news
+  - metric: company_news
+    category: news
+    canonical_definition: "Recent headlines for a company with publisher, date, URL and excerpt."
+    source: "Nasdaq; Google News RSS; Yahoo Finance RSS"
+    provider: nasdaq
+    command: "obb.news.company(symbol, provider='nasdaq') ; HTTP GET https://news.google.com/rss/search?q=... ; Yahoo Finance RSS"
+    identifier: "ticker query; no CIK"
+    period: "published date (Nasdaq: date at midnight; RSS: RFC 2822 with time)"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "No body text from any source (Nasdaq: 40 rows, 0 with body, 40 with excerpt)."
+    negative_data_behavior: "n/a"
+    restatement_behavior: "Headlines can be edited or deleted upstream; store the retrieval time and a content hash."
+    status: LIVE_VERIFIED
+    fallback: "Google RSS (100 items) and Yahoo RSS (17 items) as additional feeds."
+    limitations: "Nasdaq returned 40 items spanning 2026-09-28 to 2026-10-01 (lookback is provider-controlled, not a parameter we verified). Google RSS links are opaque redirect tokens (not stable identity) and Google titles end with ' - Publisher'. Cross-source near duplicates exist (Yahoo vs Nasdaq share 2 titles) so dedupe on normalised title + date. Publishers are mostly syndicated commentary (Motley Fool 20 of 40): reliability is low, no sentiment or relevance score."
+    sample_tested: {live: true, evidence: [E_LIVE_R2], symbols: [AAPL]}
+
+  # ------------------------------------------------------------------------------------------------ L. government contracts
+  - metric: government_awards
+    category: government
+    canonical_definition: "Federal contract awards and modifications to a recipient (USAspending)."
+    source: "USAspending.gov API v2"
+    provider: usaspending
+    command: "HTTP POST https://api.usaspending.gov/api/v2/recipient/ ; /search/spending_by_award/ ; GET /awards/{id}/ ; POST /transactions/"
+    identifier: "recipient UEI / recipient hash / name; NO ticker or CIK"
+    period: "action_date per transaction; award period of performance"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "Recipient names are free text: 'LOCKHEED MARTIN CORP' (parent, level P) vs 'LOCKHEED MARTIN CORPORATION' (child, level C) with different UEIs."
+    negative_data_behavior: "Obligations can be negative (de-obligations, e.g. -26,484.97 on a funding-only modification)."
+    restatement_behavior: "An award has many modification transactions (modification_number, action_type); totals change as modifications arrive, and last-modified dates move."
+    status: LIVE_VERIFIED
+    fallback: "none"
+    limitations: "Investigation only. No identifier links a recipient to a CIK or ticker: matching is by name or UEI and needs a curated issuer-alias table. Subsidiaries and divisions appear as separate recipients (autocomplete 'lockheed' returned 8 recipients; 'microsoft' 4 incl. unrelated entities). Not ingested."
+    sample_tested: {live: true, evidence: [E_LIVE_R2], symbols: [LMT, MSFT]}
+
+  # ------------------------------------------------------------------------------------------------ M. other events
+  - metric: corporate_events_8k_items
+    category: events
+    canonical_definition: "8-K item codes per filing as event types (1.01 agreements, 2.02 results, 5.02 officers, 7.01, 8.01, 9.01 exhibits, ...)."
+    source: "SEC submissions"
+    provider: sec
+    command: "obb.sec.company_filings(form_type='8-K') items column ; submissions filings.recent.items"
+    identifier: "cik + accession + item"
+    period: "filing date"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "items empty for non-8-K forms."
+    negative_data_behavior: "n/a"
+    restatement_behavior: "8-K/A separate."
+    status: LIVE_VERIFIED
+    fallback: "SEC full-text search (obb.sec.full_text_search; company_name came back null)."
+    limitations: "Two-year item counts: AAPL 9.01 x10, 2.02 x8, 5.02 x6; RIVN 11 distinct item types; item 9.01 is exhibits, not an event. Content must be read from the document."
+    sample_tested: {live: true, evidence: [E_LIVE_R2], symbols: [AAPL, RIVN, PTON, META]}
+
+  - metric: splits_dividends_calendar
+    category: events
+    canonical_definition: "Stock splits and dividend events."
+    source: "Nasdaq calendars"
+    provider: nasdaq
+    command: "obb.nasdaq.equity.calendar.splits ; obb.nasdaq.equity.calendar.dividend ; obb.nasdaq.equity.fundamental.dividends"
+    identifier: ticker
+    period: "event dates"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "The splits calendar for 2024-06 returned ZERO rows although NVDA split in June 2024: not reliable."
+    negative_data_behavior: "n/a"
+    restatement_behavior: "n/a"
+    status: NOT_VERIFIED
+    fallback: "Detect splits from a price-ratio break on overlapping history; SEC companyfacts StockholdersEquityNoteStockSplitConversionRatio as a cross-check."
+    limitations: "Dividend calendar and dividends commands are in the API reference but were not sampled live."
+    sample_tested: {live: true, evidence: [E_LIVE_R2, E_SHAPE], symbols: []}
+
+  - metric: litigation_and_enforcement
+    category: events
+    canonical_definition: "SEC litigation releases and full-text search hits."
+    source: "SEC"
+    provider: sec
+    command: "obb.sec.rss_litigation() ; obb.sec.full_text_search(query)"
+    identifier: "free text"
+    period: "event"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "rss_litigation rows: title only (published and link null in the sample). full_text_search: company_name null."
+    negative_data_behavior: "n/a"
+    restatement_behavior: "n/a"
+    status: LIVE_VERIFIED
+    fallback: "EDGAR full-text search UI/API (efts.sec.gov) directly."
+    limitations: "Poor structure: strategy only. No issuer linkage."
+    sample_tested: {live: true, evidence: [E_LIVE_R2], symbols: []}
+
+  - metric: analyst_price_target_consensus
+    category: earnings
+    canonical_definition: "Analyst price-target consensus (high/low/mean/median) and buy/hold/sell counts."
+    source: "Nasdaq"
+    provider: nasdaq
+    command: "obb.nasdaq.equity.estimates.consensus(symbol)"
+    identifier: ticker
+    period: "snapshot"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "Not fabricated: NULL/UNAVAILABLE when the call fails."
+    negative_data_behavior: "n/a"
+    restatement_behavior: "Snapshot with no history: store every retrieval if ever used."
+    status: API_SHAPE_VERIFIED
+    fallback: "none"
+    limitations: "Defined in the installed provider (fields target_high, buy_ratings, hold_ratings, sell_ratings) but never called live in the audit. It is a PRICE-TARGET consensus, not an EPS or revenue estimate; no guidance or EPS-estimate history is available (see guidance)."
+    sample_tested: {live: false, evidence: [E_SHAPE], symbols: []}
+
+  - metric: dividend_history
+    category: events
+    canonical_definition: "Dividend amounts and dates per share."
+    source: "Nasdaq"
+    provider: nasdaq
+    command: "obb.nasdaq.equity.fundamental.dividends(symbol) ; obb.nasdaq.equity.calendar.dividend(date)"
+    identifier: ticker
+    period: "ex-dividend / payment dates"
+    direct_or_derived: direct
+    inputs: []
+    formula: null
+    missing_data_behavior: "Non-payers return empty."
+    negative_data_behavior: "n/a"
+    restatement_behavior: "Per-share amounts are split-adjusted by the provider (unverified)."
+    status: API_SHAPE_VERIFIED
+    fallback: "SEC XBRL CommonStockDividendsPerShareDeclared."
+    limitations: "Commands exist in the installed provider; not called live. Adjustment basis unverified, so price history must stay price-only."
+    sample_tested: {live: false, evidence: [E_SHAPE], symbols: []}
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Comparability rules (canonical; executable parts in app/screening/metrics.py)
+# ---------------------------------------------------------------------------------------------------------------------
+comparability_rules:
+  - id: C1_same_period_kind
+    rule: "Only compare like with like: fiscal year with fiscal year, discrete quarter with the same quarter a year earlier, TTM with TTM. QUARTER = 84-98 days, FISCAL_YEAR = 350-380 days (52/53-week years inside), YTD periods never compare with discrete quarters."
+    function: comparable_year_over_year
+  - id: C2_one_year_apart
+    rule: "Period ends must be 350-380 days apart. A fiscal-year change (10-KT transition period, stub) is NOT_COMPARABLE."
+    function: comparable_year_over_year
+  - id: C3_same_vintage
+    rule: "A growth rate or change uses current and prior values from the SAME filing (accession). Per-share values and restated amounts are otherwise on different bases (NVDA 1.19 vs 11.93 for FY2024)."
+    function: same_filing_pair
+  - id: C4_point_in_time
+    rule: "A value is known from its filing date. Backtests and as-of screens use latest_known(points, as_of); filing dates are day-granular because OpenBB omits acceptance time."
+    function: latest_known
+  - id: C5_denominator_signs
+    rule: "Growth needs prior > 0 and current >= 0. Margins need revenue > 0. P/E needs EPS > 0. Debt/equity needs equity > 0. A zero divisor is ZERO_DENOMINATOR; a negative or sign-changing base is NOT_MEANINGFUL. Nothing is turned into 0, infinity or a sign-flipped percentage."
+    function: growth_rate
+  - id: C6_missing_is_not_zero
+    rule: "Absent data stays NULL and is never replaced by zero. Debt is zero only when reported as zero (all core lines present) or explicitly evidenced by the filing; an absent debt line is MISSING. Absent capex is never zero. (Net debt treats an absent short-term-investments line as zero WITH a flag: that understates cash, so net debt errs high, never low.)"
+    function: total_debt
+  - id: C7_issuer_vs_listing
+    rule: "Issuer metrics (issuer_market_cap, shares, fundamentals) are per CIK; listing metrics (price, return, volume) per security_id. issuer_market_cap is one number per issuer from the designated primary listing; never add listings' caps; security_market_cap is UNAVAILABLE and not invented."
+    function: issuer_market_cap
+  - id: C8_currency_and_units
+    rule: "SEC values are USD in units; Nasdaq statements and institutional market values are USD thousands. Convert at ingestion, record the unit; non-USD reporters are not in scope until NOT_VERIFIED reported_currency handling is tested."
+    function: null
+  - id: C9_ttm_construction
+    rule: "TTM = sum of four consecutive discrete quarters (or provider TTM for additive items). Never TTM for shares or per-share amounts built by summing. Fewer than four quarters = MISSING_INPUT."
+    function: null
+  - id: C10_mixed_report_periods
+    rule: "Ownership rows from different report dates are not aggregated into one number."
+    function: consistent_report_period
+  - id: C11_corporate_actions
+    rule: "Acquisitions, divestitures, spin-offs and accounting changes are NOT detectable from the providers: growth through such an event is flagged by humans only. Split re-basing of price history is detected by overlap comparison."
+    function: null
+  - id: C12_amendments
+    rule: "A 10-K/A is a new filing. If it carries XBRL values for a period they become a newer vintage of that period; otherwise it changes nothing numeric. Amendment status is derived from the form code."
+    function: latest_known
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Source / evidence model review (Phase 1 had no class named SourceMetadata: the model is the `sources` table + SourceRecord)
+# ---------------------------------------------------------------------------------------------------------------------
+source_evidence_model:
+  phase1_model: "SourceRecord(provider, dataset, url, content_hash, detail) -> sources(source_id, provider, dataset, url, content_hash, detail, retrieved_at). Append-only: one row per retrieval. Fact tables carry a nullable source_id. financial_facts also stores form, filed_date, accession_no, fiscal_year/period."
+  sufficient_for:
+    sec_filing: "Yes for facts and filings (accession, form, filing date, report date, URL, hash). Day-level point-in-time works from filed_date. Acceptance time and amendment link are not required."
+    market_data: "Partly: provider, dataset and retrieval time exist; adjustment basis (split-only), delay and the provider's own as-of timestamp do not."
+    news: "Yes with a stable source_ref (publisher URL, not a Google redirect) and event_date; publisher and published time have no column."
+    government_award: "No: EventRecord cannot hold UEI, award id, modification number, amount or agency. Out of scope until awards are in scope."
+  gaps_proven_by_audit:
+    - id: S1_command_and_parameters
+      need: "Structured command and parameters on every retrieval."
+      proof: "Same command gave different data per parameter: pit_mode, period, limit, symbol spelling (BRK.B ok / BRK-B 403), Nasdaq narrow date window empty."
+      stopgap_today: "JSON in sources.detail (tested in tests/test_evidence_model.py)."
+      change: "sources.command VARCHAR, sources.parameters VARCHAR (JSON text)."
+      required_before_phase3: true
+    - id: S2_provider_version
+      need: "OpenBB core and extension versions that produced the rows."
+      proof: "Field names and standardisation are version specific (V5 openbb-sec 2.0.0 fields such as net_income_to_common)."
+      change: "sources.provider_version VARCHAR."
+      required_before_phase3: true
+    - id: S3_provider_as_of
+      need: "The provider-reported timestamp of the data, separate from retrieved_at."
+      proof: "Cboe quote last_timestamp 2026-10-01T15:59:59; Nasdaq last_timestamp date; both retrieved 2026-10-02."
+      change: "sources.as_of TIMESTAMP (naive UTC, NULL when unknown)."
+      required_before_phase3: true
+    - id: S4_source_required_on_ingested_rows
+      need: "Ingested rows must name their retrieval."
+      proof: "source_id is nullable on every fact table; an ingestion service must reject NULL for provider data."
+      change: "No DDL; enforce in the ingestion service."
+      required_before_phase3: true
+    - id: S5_license
+      need: "Per-provider licence note."
+      proof: "Not proven necessary by the audit: all sources are public, free and key-less. Documented in this file, not in the schema."
+      change: "none"
+      required_before_phase3: false
+
+schema_gaps:
+  - id: G1_ownership_line_detail
+    table: ownership
+    need: "transaction_price, shares_owned_after, acquired_disposed (A/D), is_derivative, security_title, ownership_nature (D/I), is_10b5_1 (nullable)."
+    proof: "Live SEC insider rows carry price, securities_owned, acquisition_or_disposition, security_type, ownership_type; transaction_value is always null; 14 of 24 AAPL rows were derivative; raw XML carries aff10b5One."
+    required_before: "insider ingestion (not before Phase 3 starts)"
+  - id: G2_price_adjustment_meaning
+    table: price_daily
+    need: "adj_close stays NULL (providers are split-adjusted only); document that close is split-adjusted as of the retrieval; refresh must detect re-basing."
+    proof: "Cboe == Nasdaq closes on shared dates for MSFT and KO."
+    required_before: "price ingestion"
+  - id: G3_listing_identity
+    table: securities
+    need: "No new table now. share-class label and ticker history need either columns (share_class, valid_from, valid_to) or a history table, decided when ingestion starts; the SEC map is a snapshot so history accrues only from first ingestion."
+    proof: "ticker_history UNAVAILABLE; GOOGL has four tickers under one CIK."
+    required_before: "universe seeding"
+  - id: G4_government_awards
+    table: "new (not created)"
+    need: "awards table keyed (generated_unique_award_id, modification_number) plus an issuer alias table (UEI/name -> cik)."
+    proof: "USAspending has no ticker/CIK; recipients are parent/child entities with different UEIs."
+    required_before: "any contract ingestion (out of Phase 3 scope unless chosen)"
+  - id: G6_classification_provenance
+    table: securities
+    need: "securities.sector/industry must hold Nasdaq's raw strings and securities.sic the SEC code, with the source recorded (a classification_source value or the provider on the retrieval); no converted values in those columns."
+    proof: "Nasdaq and SEC classifications differ for the same issuer (QCOM 3663 vs 'Radio And Television Broadcasting...'; META/GOOGL 7370 vs 'Computer Software: Programming Data Processing')."
+    required_before: "universe seeding"
+  - id: G7_fact_frame
+    table: financial_facts
+    need: "nullable `frame` VARCHAR column (SEC frame label such as CY2025Q4I) so the one provenance field the table cannot hold today is stored."
+    proof: "Raw companyfacts points carry frame (live keys accn,end,filed,form,fp,frame,fy,start,val); FinancialFactRecord has no such field (tests/test_sec_provenance.py)."
+    required_before: "SEC facts ingestion"
+  - id: G5_filings_items
+    table: filings
+    need: "No change: 8-K items become events rows (source_ref = accession + item); acceptance_datetime not needed for day-level point-in-time."
+    proof: "OpenBB exposes items but not acceptance time."
+    required_before: "n/a"
+
+representative_companies:
+  AAPL: "Large non-calendar filer (FY ends late September, 52/53-week), single class: baseline for statements, dei shares, TTM share-sum trap, insider mix."
+  MSFT: "June fiscal year; price/dividend adjustment check."
+  NVDA: "January fiscal year; 10-for-1 split June 2024: per-share vintage trap; insider sales."
+  AMZN: "Calendar FY; 20-for-1 split 2022: Cboe vs Nasdaq split agreement."
+  GOOGL: "Multi-class (GOOGL/GOOG plus GOOGM/GOOGN under one CIK): no dei shares concept; per-quote market cap includes all shares."
+  META: "Name change (Facebook Inc until 2021-10-27) but same CIK; no dei shares concept."
+  AMD: "Recent 10-K/A (filed 2026-02-04): amendment handling."
+  AVGO: "FY ends early November: non-calendar."
+  RIVN: "Negative earnings and gross profit; non-controlling interests (net_income vs net_income_to_common); short history (listed 2021-11): no 5Y return."
+  PTON: "Loss-making consumer name; June fiscal year; 8-K item mix."
+  COST: "52/53-week fiscal year ending near 31 August."
+  KOSS: "Smaller cap; restated period in raw companyfacts (2017-Q3 revenue); sparse statements."
+  BRK-B: "Multi-class (BRK-A/BRK-B), SEC vs Nasdaq spelling, company_type diversified, no debt lines or EPS, 13F filer."
+  TWTR: "Discontinued: CIK still resolves, no ticker, no prices."
+  ATVI: "Discontinued (acquired 2023)."
+  JPM: "company_type financial: different statement template."
+  TSLA: "Amendments scan (10-K/A 2025 and 2026)."

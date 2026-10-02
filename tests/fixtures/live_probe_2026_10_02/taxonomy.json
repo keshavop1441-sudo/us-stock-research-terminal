@@ -1,0 +1,216 @@
+{
+ "_probe": "taxonomy.nasdaq_quote.*, taxonomy.nasdaq_profile.*, taxonomy.sec_sic.*, taxonomy.screener.* (run 36957138239, job 110682502819)",
+ "_recorded": "2026-10-02 (GitHub-hosted runner, UTC ~02:47)",
+ "issuers": {
+  "AAPL": {
+   "nasdaq": {
+    "sector": "Technology",
+    "industry": "Computer Manufacturing",
+    "stock_type": "Common Stock",
+    "exchange": "NASDAQ-GS"
+   },
+   "sec_sic": {
+    "code": "3571",
+    "description": "Electronic Computers"
+   }
+  },
+  "MSFT": {
+   "nasdaq": {
+    "sector": "Technology",
+    "industry": "Computer Software: Prepackaged Software",
+    "stock_type": "Common Stock",
+    "exchange": "NASDAQ-GS"
+   },
+   "sec_sic": {
+    "code": "7372",
+    "description": "Services-Prepackaged Software"
+   }
+  },
+  "NVDA": {
+   "nasdaq": {
+    "sector": "Technology",
+    "industry": "Semiconductors",
+    "stock_type": "Common Stock",
+    "exchange": "NASDAQ-GS"
+   },
+   "sec_sic": {
+    "code": "3674",
+    "description": "Semiconductors & Related Devices"
+   }
+  },
+  "AMD": {
+   "nasdaq": {
+    "sector": "Technology",
+    "industry": "Semiconductors",
+    "stock_type": "Common Stock",
+    "exchange": "NASDAQ-GS"
+   },
+   "sec_sic": {
+    "code": "3674",
+    "description": "Semiconductors & Related Devices"
+   }
+  },
+  "AVGO": {
+   "nasdaq": {
+    "sector": "Technology",
+    "industry": "Semiconductors",
+    "stock_type": "Common Stock",
+    "exchange": "NASDAQ-GS"
+   },
+   "sec_sic": {
+    "code": "3674",
+    "description": "Semiconductors & Related Devices"
+   }
+  },
+  "META": {
+   "nasdaq": {
+    "sector": "Technology",
+    "industry": "Computer Software: Programming Data Processing",
+    "stock_type": "Class A Common Stock",
+    "exchange": "NASDAQ-GS"
+   },
+   "sec_sic": {
+    "code": "7370",
+    "description": "Services-Computer Programming, Data Processing, Etc."
+   }
+  },
+  "AMZN": {
+   "nasdaq": {
+    "sector": "Consumer Discretionary",
+    "industry": "Catalog/Specialty Distribution",
+    "stock_type": "Common Stock",
+    "exchange": "NASDAQ-GS"
+   },
+   "sec_sic": {
+    "code": "5961",
+    "description": "Retail-Catalog & Mail-Order Houses"
+   }
+  },
+  "GOOGL": {
+   "nasdaq": {
+    "sector": "Technology",
+    "industry": "Computer Software: Programming Data Processing",
+    "stock_type": "Class A Common Stock",
+    "exchange": "NASDAQ-GS"
+   },
+   "sec_sic": {
+    "code": "7370",
+    "description": "Services-Computer Programming, Data Processing, Etc."
+   }
+  },
+  "INTC": {
+   "nasdaq": {
+    "sector": "Technology",
+    "industry": "Semiconductors",
+    "stock_type": "Common Stock",
+    "exchange": "NASDAQ-GS"
+   },
+   "sec_sic": {
+    "code": "3674",
+    "description": "Semiconductors & Related Devices"
+   }
+  },
+  "QCOM": {
+   "nasdaq": {
+    "sector": "Technology",
+    "industry": "Radio And Television Broadcasting And Communications Equipment",
+    "stock_type": "Common Stock",
+    "exchange": "NASDAQ-GS"
+   },
+   "sec_sic": {
+    "code": "3663",
+    "description": "Radio & Tv Broadcasting & Communications Equipment"
+   }
+  },
+  "TSM": {
+   "nasdaq": {
+    "sector": "Technology",
+    "industry": "Semiconductors",
+    "stock_type": "American Depositary Shares",
+    "exchange": "NYSE"
+   },
+   "sec_sic": {
+    "code": "3674",
+    "description": "Semiconductors & Related Devices"
+   }
+  },
+  "ASML": {
+   "nasdaq": {
+    "sector": "Technology",
+    "industry": "Industrial Machinery/Components",
+    "stock_type": "New York Registry Shares",
+    "exchange": "NASDAQ-GS"
+   },
+   "sec_sic": {
+    "code": "3559",
+    "description": "Special Industry Machinery, NEC"
+   }
+  },
+  "MU": {
+   "nasdaq": {
+    "sector": "Technology",
+    "industry": "Semiconductors",
+    "stock_type": "Common Stock",
+    "exchange": "NASDAQ-GS"
+   },
+   "sec_sic": {
+    "code": "3674",
+    "description": "Semiconductors & Related Devices"
+   }
+  },
+  "TXN": {
+   "nasdaq": {
+    "sector": "Technology",
+    "industry": "Semiconductors",
+    "stock_type": "Common Stock",
+    "exchange": "NASDAQ-GS"
+   },
+   "sec_sic": {
+    "code": "3674",
+    "description": "Semiconductors & Related Devices"
+   }
+  }
+ },
+ "profile_industry_category_and_group": "null for every symbol probed (only sector, stock_type, exchange populated)",
+ "screener_technology_all": {
+  "n_rows": 781,
+  "n_industries": 13,
+  "semiconductors_rows": 106,
+  "columns": [
+   "change",
+   "change_percent",
+   "country",
+   "industry",
+   "ipo_year",
+   "last_price",
+   "market_cap",
+   "name",
+   "sector",
+   "symbol",
+   "volume"
+  ],
+  "industries": {
+   "Computer Software: Prepackaged Software": 253,
+   "EDP Services": 183,
+   "Semiconductors": 106,
+   "Computer Software: Programming Data Processing": 86,
+   "Industrial Machinery/Components": 39,
+   "Electrical Products": 23,
+   "Radio And Television Broadcasting And Communications Equipment": 22,
+   "Electronic Components": 21,
+   "Computer peripheral equipment": 20,
+   "Computer Manufacturing": 11,
+   "Retail: Computer Software & Peripheral Equipment": 8,
+   "Consumer Electronics/Appliances": 8,
+   "Office Equipment/Supplies/Services": 1
+  }
+ },
+ "screener_consumer_discretionary_all": {
+  "n_rows": 1095,
+  "n_industries": 62,
+  "AMZN": "Catalog/Specialty Distribution",
+  "note": "'Telecommunications Equipment' (21 rows) appears here, while a comparable 'Radio And Television Broadcasting And Communications Equipment' appears under Technology: industry strings are free text and sector-dependent"
+ },
+ "screener_communication_services": "EmptyDataError: no results (sector value is accepted by the provider's choice list but returns nothing); META and GOOGL are classified Technology",
+ "screener_exchange_all": "included NYSE-listed TSM and Nasdaq-listed names; the screener output has no exchange column; AMEX not sampled"
+}

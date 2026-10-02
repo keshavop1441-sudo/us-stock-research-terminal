@@ -1,0 +1,57 @@
+{
+ "_probe": "followup.nvda_split.pit_False / pit_True",
+ "pit_false": [
+  {
+   "period_ending": "2026-01-25",
+   "total_revenue": 215938000000.0,
+   "net_income": 120067000000.0,
+   "diluted_eps": 4.9
+  },
+  {
+   "period_ending": "2025-01-26",
+   "total_revenue": 130497000000.0,
+   "net_income": 72880000000.0,
+   "diluted_eps": 2.94
+  },
+  {
+   "period_ending": "2024-01-28",
+   "total_revenue": 60922000000.0,
+   "net_income": 29760000000.0,
+   "diluted_eps": 1.19
+  },
+  {
+   "period_ending": "2023-01-29",
+   "total_revenue": 26974000000.0,
+   "net_income": 4368000000.0,
+   "diluted_eps": 1.74
+  }
+ ],
+ "pit_true": [
+  {
+   "period_ending": "2026-01-25",
+   "total_revenue": 215938000000.0,
+   "net_income": 120067000000.0,
+   "diluted_eps": 4.9
+  },
+  {
+   "period_ending": "2025-01-26",
+   "total_revenue": 130497000000.0,
+   "net_income": 72880000000.0,
+   "diluted_eps": 2.94
+  },
+  {
+   "period_ending": "2024-01-28",
+   "total_revenue": 60922000000.0,
+   "net_income": 29760000000.0,
+   "diluted_eps": 11.93
+  },
+  {
+   "period_ending": "2023-01-29",
+   "total_revenue": 26974000000.0,
+   "net_income": 4368000000.0,
+   "diluted_eps": 1.74
+  }
+ ],
+ "_note": "NVDA effected a 10-for-1 split in June 2024. FY2024 EPS is 1.19 (post-split) by default and 11.93 (as filed) with pit_mode; FY2023 is 1.74 in both.",
+ "_recorded": "2026-10-02 (GitHub-hosted runner, UTC ~02:15-02:25)"
+}
