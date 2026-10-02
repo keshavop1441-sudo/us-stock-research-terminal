@@ -2,6 +2,7 @@
 
 Global options (before the command): `--db PATH`, `--sec-user-agent "<App> <contact>"`, `--pretty`.
 Every command prints **one JSON envelope** to stdout and nothing else.
+Diagnostics from libraries (for example OpenBB's first-run "Extensions to add" / "Building..." messages) go to stderr, never to stdout.
 
 ```json
 {"schema_version": "1.0", "command": "screen", "status": "OK|PARTIAL|ERROR",
