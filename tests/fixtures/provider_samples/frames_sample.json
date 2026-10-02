@@ -1,0 +1,65 @@
+{
+ "taxonomy": "us-gaap",
+ "tag": "PaymentsForRepurchaseOfCommonStock",
+ "ccp": "CY2023",
+ "uom": "USD",
+ "label": "Payments for Repurchase of Common Stock",
+ "description": "The cash outflow to reacquire common stock during the period.",
+ "pts": 2271,
+ "data": [
+  {
+   "accn": "0001628280-24-005348",
+   "cik": 1800,
+   "entityName": "Abbott Laboratories",
+   "loc": "US-IL",
+   "start": "2023-01-01",
+   "end": "2023-12-31",
+   "val": 1227000000
+  },
+  {
+   "accn": "0000002178-24-000035",
+   "cik": 2178,
+   "entityName": "ADAMS RESOURCES & ENERGY, INC.",
+   "loc": "US-TX",
+   "start": "2023-01-01",
+   "end": "2023-12-31",
+   "val": 0
+  },
+  {
+   "accn": "0000002488-24-000012",
+   "cik": 2488,
+   "entityName": "ADVANCED MICRO DEVICES, INC.",
+   "loc": "US-CA",
+   "start": "2023-01-01",
+   "end": "2023-12-30",
+   "val": 985000000
+  },
+  {
+   "accn": "0000950170-24-025511",
+   "cik": 3197,
+   "entityName": "CECO ENVIRONMENTAL CORP.",
+   "loc": "US-TX",
+   "start": "2023-01-01",
+   "end": "2023-12-31",
+   "val": 0
+  },
+  {
+   "accn": "0001558370-24-001570",
+   "cik": 3453,
+   "entityName": "Matson,\u00a0Inc.",
+   "loc": "US-HI",
+   "start": "2023-01-01",
+   "end": "2023-12-31",
+   "val": 155200000
+  },
+  {
+   "accn": "0000003570-24-000040",
+   "cik": 3570,
+   "entityName": "CHENIERE ENERGY, INC.",
+   "loc": "US-TX",
+   "start": "2023-01-01",
+   "end": "2023-12-31",
+   "val": 1473000000
+  }
+ ]
+}

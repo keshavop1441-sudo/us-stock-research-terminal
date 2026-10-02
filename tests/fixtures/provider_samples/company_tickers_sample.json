@@ -1,0 +1,83 @@
+{
+ "_full_size": 10295,
+ "0": {
+  "cik_str": 1058090,
+  "ticker": "CMG",
+  "title": "CHIPOTLE MEXICAN GRILL INC"
+ },
+ "1": {
+  "cik_str": 789019,
+  "ticker": "MSFT",
+  "title": "MICROSOFT CORP"
+ },
+ "2": {
+  "cik_str": 320193,
+  "ticker": "AAPL",
+  "title": "Apple Inc."
+ },
+ "3": {
+  "cik_str": 1045810,
+  "ticker": "NVDA",
+  "title": "NVIDIA CORP"
+ },
+ "4": {
+  "cik_str": 1652044,
+  "ticker": "GOOGL",
+  "title": "Alphabet Inc."
+ },
+ "5": {
+  "cik_str": 1018724,
+  "ticker": "AMZN",
+  "title": "AMAZON COM INC"
+ },
+ "6": {
+  "cik_str": 1326801,
+  "ticker": "META",
+  "title": "Meta Platforms, Inc."
+ },
+ "8": {
+  "cik_str": 1067983,
+  "ticker": "BRK-B",
+  "title": "BERKSHIRE HATHAWAY INC"
+ },
+ "10": {
+  "cik_str": 1730168,
+  "ticker": "AVGO",
+  "title": "Broadcom Inc."
+ },
+ "23": {
+  "cik_str": 909832,
+  "ticker": "COST",
+  "title": "COSTCO WHOLESALE CORP /NEW"
+ },
+ "34": {
+  "cik_str": 2488,
+  "ticker": "AMD",
+  "title": "ADVANCED MICRO DEVICES INC"
+ },
+ "800": {
+  "cik_str": 1874178,
+  "ticker": "RIVN",
+  "title": "Rivian Automotive, Inc. / DE"
+ },
+ "2390": {
+  "cik_str": 1639825,
+  "ticker": "PTON",
+  "title": "PELOTON INTERACTIVE, INC."
+ },
+ "5484": {
+  "cik_str": 56701,
+  "ticker": "KOSS",
+  "title": "KOSS CORP"
+ },
+ "7599": {
+  "cik_str": 1652044,
+  "ticker": "GOOG",
+  "title": "Alphabet Inc."
+ },
+ "7602": {
+  "cik_str": 1067983,
+  "ticker": "BRK-A",
+  "title": "BERKSHIRE HATHAWAY INC"
+ }
+}

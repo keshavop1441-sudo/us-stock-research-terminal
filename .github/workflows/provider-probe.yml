@@ -7,6 +7,15 @@ name: Provider probe (read-only data-source audit)
 
 on:
   workflow_dispatch:
+    inputs:
+      only:
+        description: "Regex: run only probes whose id matches (prints full detail)"
+        required: false
+        default: ""
+      group:
+        description: "Run a single group only (blank = all four)"
+        required: false
+        default: ""
   pull_request:
     paths:
       - scripts/audit/probe_providers.py
@@ -24,6 +33,7 @@ jobs:
       fail-fast: false
       matrix:
         group: [connect_identity, market, fundamentals, ownership_events]
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.group == '' || inputs.group == matrix.group }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -33,4 +43,4 @@ jobs:
       - name: Run probe
         env:
           SEC_USER_AGENT: ${{ vars.SEC_USER_AGENT }}
-        run: python scripts/audit/probe_providers.py --group ${{ matrix.group }}
+        run: python scripts/audit/probe_providers.py --group ${{ matrix.group }} --digest ${{ inputs.only && format('--only "{0}"', inputs.only) || '' }}

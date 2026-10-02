@@ -14,6 +14,7 @@ to the SEC (name + contact e-mail is what the SEC asks for); the default identif
 import argparse
 import json
 import os
+import re
 import sys
 import time
 import traceback
@@ -25,8 +26,19 @@ from pathlib import Path
 
 import httpx
 
-DEFAULT_UA = "us-stock-research-terminal-audit (https://github.com/keshavop1441-sudo/us-stock-research-terminal)"
-SEC_UA = os.environ.get("SEC_USER_AGENT") or DEFAULT_UA
+REPO_UA = "us-stock-research-terminal-audit (https://github.com/keshavop1441-sudo/us-stock-research-terminal)"
+
+
+def _openbb_default_ua() -> str:
+    from openbb_sec.utils import definitions
+
+    return definitions.SEC_HEADERS["User-Agent"]
+
+
+# Stock behaviour first: unless SEC_USER_AGENT is set, use exactly the User-Agent OpenBB ships (a placeholder in
+# the shape "name email"). A real deployment MUST identify itself with a real contact (SEC fair-access policy).
+SEC_UA = os.environ.get("SEC_USER_AGENT") or _openbb_default_ua()
+SEC_UA_MODE = "env SEC_USER_AGENT" if os.environ.get("SEC_USER_AGENT") else "openbb shipped default"
 MAX_LINE = 9000
 
 # ticker -> CIK as published by the SEC (verified against company_tickers.json in OpenBB's recorded fixture).
@@ -39,6 +51,7 @@ HISTORICAL = {"TWTR": 1418091, "ATVI": 718877, "GOOGLE_INC_OLD": 1288776}
 ALL_CIKS = {**CORE, **STRESS, **HISTORICAL}
 
 _results: list[dict] = []
+_only: list = []  # compiled --only pattern (probes whose id does not match are skipped)
 
 
 def emit(probe_id: str, ok: bool, started: float, info: object) -> None:
@@ -52,6 +65,8 @@ def emit(probe_id: str, ok: bool, started: float, info: object) -> None:
 
 def probe(probe_id: str, fn, *args, **kwargs) -> object:
     """Run ``fn`` and record success/failure. Never raises."""
+    if _only and not _only[0].search(probe_id):
+        return None
     started = time.monotonic()
     try:
         info = fn(*args, **kwargs)
@@ -100,8 +115,9 @@ def use_obb():
     from openbb import obb
     from openbb_sec.utils import definitions
 
-    for headers in (definitions.SEC_HEADERS, definitions.HEADERS):  # OpenBB ships a placeholder UA; override in place
-        headers["User-Agent"] = SEC_UA
+    if os.environ.get("SEC_USER_AGENT"):
+        for headers in (definitions.SEC_HEADERS, definitions.HEADERS):  # override OpenBB's placeholder in place
+            headers["User-Agent"] = SEC_UA
     return obb
 
 
@@ -143,7 +159,7 @@ def today() -> date:
 def group_connect_identity() -> None:
     obb = use_obb()
     print("PROBE_ENV " + json.dumps({"utc_now": datetime.now(UTC).isoformat(), "python": sys.version.split()[0],
-                                     "sec_user_agent_is_default": SEC_UA == DEFAULT_UA}))  # fmt: skip
+                                     "sec_ua_mode": SEC_UA_MODE}))  # fmt: skip
     from openbb_nasdaq.utils.helpers import get_headers
 
     hosts = {
@@ -164,6 +180,26 @@ def group_connect_identity() -> None:
         probe(f"host.{name}", reach, url)
     probe("host.nasdaq_api_quote", reach, "https://api.nasdaq.com/api/quote/AAPL/info?assetclass=stocks",
           ua=get_headers()["User-Agent"], headers={k: v for k, v in get_headers().items() if k != "User-Agent"})  # fmt: skip
+
+    def ua_experiment() -> dict:
+        url = f"https://data.sec.gov/submissions/CIK{cik10(320193)}.json"
+        out = {}
+        browser = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+        for label, ua in (
+            ("repo_id_no_email", REPO_UA),
+            ("openbb_shipped_default", _openbb_default_ua()),
+            ("browser_like", browser),
+        ):
+            r = http("GET", url, ua=ua, sleep=1.0)
+            out[label] = {
+                "ua": ua,
+                "status": r.status_code,
+                "bytes": len(r.content),
+                "head": r.text[:120].replace("\n", " "),
+            }
+        return out
+
+    probe("sec.user_agent_experiment", ua_experiment)
 
     # --- SEC reference data ---------------------------------------------------------------------------------------
     def tickers_exchange() -> dict:
@@ -245,6 +281,44 @@ def group_connect_identity() -> None:
     for label in ("META", "GOOGL", "BRK-B"):
         probe(f"sec.companyfacts_dei.{label}", companyfacts_dei, label, ALL_CIKS[label])
 
+    def symbol_directory() -> dict:
+        out = {}
+        wanted = {
+            "AAPL",
+            "GOOGL",
+            "GOOG",
+            "BRK.B",
+            "BRK.A",
+            "META",
+            "NVDA",
+            "RIVN",
+            "PTON",
+            "COST",
+            "KOSS",
+            "SPY",
+            "BRKB",
+        }
+        for name in ("nasdaqlisted", "otherlisted"):
+            response = http(
+                "GET",
+                f"https://www.nasdaqtrader.com/dynamic/SymDir/{name}.txt",
+                ua="Mozilla/5.0 (compatible; audit-probe)",
+            )
+            lines = response.text.strip().splitlines()
+            header = lines[0].split("|")
+            records = [dict(zip(header, line.split("|"), strict=False)) for line in lines[1:-1]]
+            key = "Symbol" if "Symbol" in header else "ACT Symbol"
+            out[name] = {"status": response.status_code, "header": header, "n": len(records), "footer": lines[-1][:80],
+                         "rows": {r[key]: r for r in records if r.get(key) in wanted},
+                         "etf_flag_counts": dict(Counter(r.get("ETF") for r in records)), "test_issue_counts": dict(Counter(r.get("Test Issue") for r in records)),
+                         "exchange_counts": dict(Counter(r.get("Exchange") for r in records)) if name == "otherlisted" else None,
+                         "market_category": dict(Counter(r.get("Market Category") for r in records)) if name == "nasdaqlisted" else None}  # fmt: skip
+        return out
+
+    probe("nasdaqtrader.symbol_directory", symbol_directory)
+    probe("obb.nasdaq.screener.tech_mega", lambda: summary(obb.nasdaq.equity.screener(exchange="nasdaq", sector="technology", mktcap="mega", provider="nasdaq"), ["symbol", "name", "last_price", "market_cap", "country", "ipo_year", "industry", "sector"], 5))  # fmt: skip
+    probe("obb.nasdaq.calendar_splits.2024-06", lambda: summary(obb.nasdaq.equity.calendar.splits(start_date="2024-06-01", end_date="2024-06-30", provider="nasdaq"), ["date", "symbol", "numerator", "denominator", "ratio_display", "payable_date"], 8))  # fmt: skip
+
     # --- Nasdaq / Cboe identity ---------------------------------------------------------------------------------------
     profile_fields = ["symbol", "name", "cik", "cusip", "isin", "stock_exchange", "sic", "sector", "industry_category",
                       "entity_status", "stock_type", "exchange", "inc_state", "first_stock_price_date", "last_stock_price_date"]  # fmt: skip
@@ -273,16 +347,29 @@ def group_market() -> None:
         "AAPL": ("2020-08-26", "2020-09-02"), "AMZN": ("2022-06-01", "2022-06-08"),
         "GOOGL": ("2022-07-13", "2022-07-20"), "NVDA": ("2024-06-04", "2024-06-12"),
     }  # fmt: skip
+    nasdaq_full: dict[str, list[dict]] = {}
+
+    def nasdaq_slice(symbol: str, start: str, end: str) -> list[dict]:
+        if symbol not in nasdaq_full:
+            nasdaq_full[symbol] = history_rows(
+                obb.nasdaq.equity.historical, symbol, "2000-01-01", today().isoformat(), "nasdaq"
+            )
+        return [
+            pick(r, ["date", "open", "close", "volume"])
+            for r in nasdaq_full[symbol]
+            if start <= str(r["date"])[:10] <= end
+        ]
+
     for symbol, (start, end) in windows.items():
-        for provider, fn in (("cboe", obb.cboe.equity.historical), ("nasdaq", obb.nasdaq.equity.historical)):
-            probe(f"split.{provider}.{symbol}", lambda f=fn, s=symbol, a=start, b=end, p=provider:
-                  [pick(r, ["date", "open", "close", "volume"]) for r in history_rows(f, s, a, b, p)])  # fmt: skip
+        probe(f"split.cboe.{symbol}", lambda s=symbol, a=start, b=end: [pick(r, ["date", "open", "close", "volume"]) for r in history_rows(obb.cboe.equity.historical, s, a, b, "cboe")])  # fmt: skip
+        probe(f"split.nasdaq_full_range_sliced.{symbol}", nasdaq_slice, symbol, start, end)
+        probe(f"split.nasdaq_narrow_window.{symbol}", lambda s=symbol, a=start, b=end: [pick(r, ["date", "close"]) for r in history_rows(obb.nasdaq.equity.historical, s, a, b, "nasdaq")])  # fmt: skip
 
     # dividend adjustment: compare the SAME historical dates across providers for dividend payers
     for symbol in ("MSFT", "KO"):
-        for provider, fn in (("cboe", obb.cboe.equity.historical), ("nasdaq", obb.nasdaq.equity.historical)):
-            probe(f"divadj.{provider}.{symbol}", lambda f=fn, s=symbol, p=provider:
-                  [pick(r, ["date", "close"]) for r in history_rows(f, s, "2015-01-02", "2015-01-07", p)])  # fmt: skip
+        probe(f"divadj.cboe.{symbol}", lambda s=symbol: [pick(r, ["date", "close"]) for r in history_rows(obb.cboe.equity.historical, s, "2015-01-02", "2015-01-07", "cboe")])  # fmt: skip
+        probe(f"divadj.nasdaq_sliced.{symbol}", lambda s=symbol: [{"date": r["date"], "close": r["close"]} for r in nasdaq_slice(s, "2016-10-03", "2016-10-07")])  # fmt: skip
+        probe(f"divadj.cboe_same_dates.{symbol}", lambda s=symbol: [pick(r, ["date", "close"]) for r in history_rows(obb.cboe.equity.historical, s, "2016-10-03", "2016-10-07", "cboe")])  # fmt: skip
 
     def depth(provider: str, fn, symbol: str) -> dict:
         data = history_rows(fn, symbol, "1990-01-01", today().isoformat(), provider)
@@ -682,9 +769,17 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--group", choices=sorted(GROUPS), required=True)
     parser.add_argument("--out", type=Path, default=None, help="also write all results as JSON to this file")
+    parser.add_argument("--only", default="", help="regex: run only probes whose id matches (full detail is printed)")
+    parser.add_argument("--digest", action="store_true", help="print a one-line digest per probe at the end")
     args = parser.parse_args()
+    if args.only:
+        _only.append(re.compile(args.only))
     started = time.monotonic()
     GROUPS[args.group]()
+    if args.digest:
+        for r in _results:
+            gist = json.dumps(r["info"], default=str)[:150]
+            print(f"DIGEST {'OK  ' if r['ok'] else 'FAIL'} {r['id']} {r['ms']}ms {gist}")
     ok = sum(1 for r in _results if r["ok"])
     print(
         f"PROBE_SUMMARY group={args.group} total={len(_results)} ok={ok} failed={len(_results) - ok} seconds={time.monotonic() - started:.0f}"
