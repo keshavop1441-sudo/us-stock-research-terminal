@@ -12,6 +12,10 @@ IMPORT_TO_DIST = {
     "dotenv": "python-dotenv",
     "openbb_core": "openbb-core",
     "openbb": "openbb-core",  # the `openbb` package ships inside openbb-core 2.x
+    "openbb_sec": "openbb-sec",
+    "openbb_nasdaq": "openbb-nasdaq",
+    "openbb_cboe": "openbb-cboe",
+    "openbb_news": "openbb-news",
 }
 LOCAL_PACKAGES = {"app", "scripts", "tests"}
 

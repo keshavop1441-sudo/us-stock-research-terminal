@@ -1,0 +1,36 @@
+name: Provider probe (read-only data-source audit)
+
+# Not part of the product. Runs the read-only audit probe from a GitHub-hosted runner, because the development
+# sandbox cannot reach SEC / Nasdaq / Cboe / USAspending. Output: one `PROBE {json}` line per probe in the job log.
+# Optional repository variable SEC_USER_AGENT ("Your Name your@email") identifies the caller to the SEC as its
+# fair-access policy asks; without it the probe identifies this repository only.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - scripts/audit/probe_providers.py
+      - .github/workflows/provider-probe.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: probe (${{ matrix.group }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [connect_identity, market, fundamentals, ownership_events]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - run: python -m pip install --require-hashes -r requirements.lock
+      - name: Run probe
+        env:
+          SEC_USER_AGENT: ${{ vars.SEC_USER_AGENT }}
+        run: python scripts/audit/probe_providers.py --group ${{ matrix.group }}

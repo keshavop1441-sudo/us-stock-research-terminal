@@ -10,3 +10,5 @@ ignore = ["UP037"]
 [lint.per-file-ignores]
 "app/main.py" = ["E402"]
 "scripts/*.py" = ["E402"]
+# Audit tool (not application code): dense one-line probe declarations are easier to review than wrapped ones.
+"scripts/audit/*.py" = ["E402", "E501", "S314"]
