@@ -32,7 +32,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        group: [connect_identity, market, fundamentals, ownership_events, followup]
+        group: [connect_identity, market, fundamentals, ownership_events, followup, taxonomy]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

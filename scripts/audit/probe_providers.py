@@ -841,8 +841,58 @@ def group_followup() -> None:
     probe("followup.symbol_map.1067983", lambda: rows(obb.sec.symbol_map(query="1067983", provider="sec")))
 
 
+# =====================================================================================================================
+# group: taxonomy  (Nasdaq sector/industry vs SEC SIC for representative issuers; screener industry vocabulary)
+# =====================================================================================================================
+def group_taxonomy() -> None:
+    obb = use_obb()
+    symbols = [
+        "AAPL",
+        "MSFT",
+        "NVDA",
+        "AMD",
+        "AVGO",
+        "META",
+        "AMZN",
+        "GOOGL",
+        "INTC",
+        "QCOM",
+        "TSM",
+        "ASML",
+        "MU",
+        "TXN",
+    ]
+    for symbol in symbols:
+        probe(f"taxonomy.nasdaq_quote.{symbol}", lambda s=symbol: [
+            pick(r, ["symbol", "name", "exchange", "sector", "industry"])
+            for r in rows(obb.nasdaq.equity.quote(symbol=s, provider="nasdaq"))])  # fmt: skip
+        probe(f"taxonomy.nasdaq_profile.{symbol}", lambda s=symbol: [
+            pick(r, ["symbol", "sector", "industry_category", "industry_group", "stock_type", "exchange", "sic", "cik"])
+            for r in rows(obb.nasdaq.equity.profile(symbol=s, provider="nasdaq"))])  # fmt: skip
+
+    def sic(symbol: str) -> dict:
+        cik = rows(obb.sec.cik_map(symbol=symbol, provider="sec"))[0]["cik"]
+        data = sec_json(f"https://data.sec.gov/submissions/CIK{cik}.json")
+        return {"symbol": symbol, "cik": cik, "sic": data.get("sic"), "sicDescription": data.get("sicDescription")}
+
+    for symbol in symbols:
+        probe(f"taxonomy.sec_sic.{symbol}", sic, symbol)
+
+    def screener(sector: str, exchange: str) -> dict:
+        records = rows(obb.nasdaq.equity.screener(sector=sector, exchange=exchange, limit=10000, provider="nasdaq"))
+        industries = Counter(r.get("industry") for r in records)
+        found = {r["symbol"]: [r.get("sector"), r.get("industry")] for r in records if r["symbol"] in symbols}
+        return {"n": len(records), "columns": sorted(records[0]) if records else [], "n_industries": len(industries),
+                "industries": industries.most_common(80), "representatives": found,
+                "exchanges_sample": Counter(r.get("exchange") for r in records).most_common(6)}  # fmt: skip
+
+    probe("taxonomy.screener.technology.all", screener, "technology", "all")
+    for sector in ("consumer_discretionary", "communication_services"):
+        probe(f"taxonomy.screener.{sector}.all", screener, sector, "all")
+
+
 GROUPS = {"connect_identity": group_connect_identity, "market": group_market, "fundamentals": group_fundamentals,
-          "ownership_events": group_ownership_events, "followup": group_followup}  # fmt: skip
+          "ownership_events": group_ownership_events, "followup": group_followup, "taxonomy": group_taxonomy}  # fmt: skip
 
 
 def main() -> int:
