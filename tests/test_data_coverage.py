@@ -313,3 +313,36 @@ def test_p0_manifest_in_the_yaml_matches_the_code():
     from app.ingestion.manifest import SYMBOLS
 
     assert tuple(DATA["p0_pilot"]["manifest"]["securities"]) == SYMBOLS
+
+
+def test_p0_hardening_sections_document_taxonomy_coverage_and_acceptance_semantics():
+    p0 = DATA["p0_pilot"]
+    taxonomy = p0["taxonomy_coverage"]
+    assert "ifrs-full" in taxonomy["unsupported"] and "not a failure" in taxonomy["decision"]
+    assert (
+        "UNSUPPORTED_TAXONOMY" in taxonomy["representation"]["downstream"]
+        and "never 0" in taxonomy["representation"]["downstream"]
+    )
+    semantics = p0["acceptance_semantics"]
+    assert set(semantics["criterion_statuses"]) == {
+        "PASS",
+        "FAIL",
+        "PARTIAL",
+        "NOT_EVALUABLE",
+        "DEFERRED",
+        "EXPECTED_UNSUPPORTED",
+    }
+    assert (
+        "revenue_vs_nasdaq" in semantics["a12_not_measurable_now"] and "DEFERRED" in semantics["a12_not_measurable_now"]
+    )
+    assert "only with" in semantics["overall_verdict"].lower()
+    assert "ifrs_accounting_facts" in p0["not_in_p0"]
+    assert "d37dafd" in p0["live_status"]["first_live_run"]
+
+
+def test_the_acceptance_vocabulary_in_the_yaml_matches_the_code():
+    from app.ingestion.acceptance import COMPONENT_STATUSES, CRITERION_STATUSES
+
+    semantics = DATA["p0_pilot"]["acceptance_semantics"]
+    assert set(semantics["component_statuses"]) == COMPONENT_STATUSES
+    assert set(semantics["criterion_statuses"]) == CRITERION_STATUSES

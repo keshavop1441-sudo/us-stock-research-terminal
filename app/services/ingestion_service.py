@@ -27,7 +27,7 @@ from app.database import access
 from app.database.errors import DatabaseUnavailableError
 from app.ingestion import market_normalize as mn
 from app.ingestion import sec_normalize as sn
-from app.ingestion.errors import IngestionError, MissingUserAgentError, NoFactsError
+from app.ingestion.errors import IngestionError, MissingUserAgentError, NoFactsError, UnsupportedTaxonomyError
 from app.ingestion.manifest import MANIFEST, PRICE_HISTORY_START, P0Security, manifest_digest, primary_symbol_for
 from app.ingestion.market_source import MarketData
 from app.ingestion.raw_store import RawStore
@@ -122,9 +122,20 @@ class P0Run:
         stage.ended_at = self.clock()
         stage.status = "OK" if stage.failed == 0 else ("FAILED" if stage.succeeded == 0 else "PARTIAL")
 
-    def _record(self, w, retrieval: Retrieval, label: str) -> int:
-        if self.raw:
+    def _save_raw(self, retrieval: Retrieval, label: str) -> None:
+        if self.raw and not retrieval.raw_path:
             self.raw.save(retrieval, label)
+
+    def _drain_openbb_warnings(self, stage: str) -> None:
+        """Python warnings OpenBB raised during the last call(s), attributed to provider/command/symbol."""
+        for item in self.market.drain_warnings():
+            self.report.warn(
+                "OPENBB_WARNING", item["symbol"], item["message"], provider=item["provider"], stage=stage,
+                command=item["command"], sent_symbol=item["sent_symbol"], warning_class=item["category"],
+            )  # fmt: skip
+
+    def _record(self, w, retrieval: Retrieval, label: str) -> int:
+        self._save_raw(retrieval, label)
         self.report.retrievals_recorded += 1
         self.report.fallback_retrievals += int(retrieval.is_fallback)
         return w.record_source(retrieval.to_source_record())
@@ -195,21 +206,42 @@ class P0Run:
         for sec in todo:
             outcome, started = report.outcomes[sec.symbol], self.clock()
             try:
-                retrieval = self.market.historical(sec.symbol, self.price_start, self.as_of)
+                try:
+                    retrieval = self.market.historical(sec.symbol, self.price_start, self.as_of)
+                finally:
+                    self._drain_openbb_warnings("prices")
                 source_id = self._record(w, retrieval, sec.symbol)
                 parsed = mn.parse_prices(self._security_ids[sec.symbol], retrieval.payload, source_id)  # type: ignore[arg-type]
+                where = {
+                    "provider": retrieval.provider, "stage": "prices", "command": retrieval.command,
+                    "sent_symbol": retrieval.parameters.get("symbol"), "is_fallback": retrieval.is_fallback,
+                }  # fmt: skip
                 for reason, n in mn.count_rejects(parsed.rejects).items():
-                    report.warn("REJECTED_PRICE_ROWS", sec.symbol, f"{n} rows rejected: {reason}")
-                if parsed.duplicates:
+                    rows = [r["row"] for r in parsed.rejects if r["reason"] == reason]
                     report.warn(
-                        "DUPLICATE_PROVIDER_ROWS", sec.symbol, f"{parsed.duplicates} repeated trade dates (last kept)"
-                    )
+                        "REJECTED_PRICE_ROWS", sec.symbol, f"{n} row(s) rejected: {reason}",
+                        reason=reason, rows=rows[:5], **where,
+                    )  # fmt: skip
+                if parsed.duplicates:
+                    conflicting = [d for d in parsed.duplicate_details if not d["identical"]]
+                    report.warn(
+                        "CONFLICTING_DUPLICATE_PROVIDER_ROWS" if conflicting else "DUPLICATE_PROVIDER_ROWS",
+                        sec.symbol,
+                        f"{parsed.duplicates} repeated trade date(s), last kept"
+                        + (f"; {len(conflicting)} with DIFFERENT values" if conflicting else " (all identical)"),
+                        duplicates=parsed.duplicates, conflicting=len(conflicting),
+                        dates=[d["date"] for d in parsed.duplicate_details[:10]],
+                        samples=parsed.duplicate_details[:5], **where,
+                    )  # fmt: skip
                 if not parsed.records:
                     raise IngestionError(f"{sec.symbol}: no usable price rows")
                 ratio = mn.detect_rebase(w.price_closes(self._security_ids[sec.symbol]), parsed.records)
                 if ratio is not None:
                     report.split_rebases[sec.symbol] = ratio
-                    report.warn("SPLIT_REBASE_DETECTED", sec.symbol, f"overlapping closes changed by x{ratio:.4f}")
+                    report.warn(
+                        "SPLIT_REBASE_DETECTED", sec.symbol, f"overlapping closes changed by x{ratio:.4f}",
+                        ratio=ratio, **where,
+                    )  # fmt: skip
                 report.counts("price_daily").add(w.upsert_prices(parsed.records))
                 outcome.price, outcome.price_rows = True, len(parsed.records)
                 outcome.price_first, outcome.price_last, outcome.price_gaps = parsed.first, parsed.last, parsed.gaps
@@ -229,8 +261,14 @@ class P0Run:
         for sec in todo:
             outcome, started = report.outcomes[sec.symbol], self.clock()
             try:
-                retrieval = self.market.quote(sec.symbol)
+                try:
+                    retrieval = self.market.quote(sec.symbol)
+                finally:
+                    self._drain_openbb_warnings("quotes")
                 source_id = self._record(w, retrieval, sec.symbol)
+                raw_quote = retrieval.payload[0]  # type: ignore[index]
+                where = {"provider": retrieval.provider, "stage": "quotes", "command": retrieval.command,
+                         "sent_symbol": retrieval.parameters.get("symbol")}  # fmt: skip
                 parsed = mn.parse_quote(self._security_ids[sec.symbol], retrieval.payload[0], source_id)  # type: ignore[index]
                 report.counts("market_quotes").add(w.upsert_market_quotes([parsed.record]))
                 if parsed.sector or parsed.industry:  # raw Nasdaq strings, stored WITH their source system
@@ -244,9 +282,16 @@ class P0Run:
                         )
                     )
                 else:
-                    report.warn("NO_NASDAQ_CLASSIFICATION", sec.symbol, "quote carried no sector/industry")
+                    report.warn(
+                        "NO_NASDAQ_CLASSIFICATION", sec.symbol, "quote carried no usable sector/industry",
+                        raw_sector=raw_quote.get("sector"), raw_industry=raw_quote.get("industry"),
+                        raw_exchange=raw_quote.get("exchange"), **where,
+                    )  # fmt: skip
                 if parsed.record.market_cap is None:
-                    report.warn("NO_QUOTED_MARKET_CAP", sec.symbol, "issuer_market_cap will be MISSING_INPUT")
+                    report.warn(
+                        "NO_QUOTED_MARKET_CAP", sec.symbol, "issuer_market_cap will be MISSING_INPUT",
+                        raw_market_cap=raw_quote.get("market_cap"), **where,
+                    )  # fmt: skip
                 outcome.quote = True
                 stage.succeeded += 1
             except (IngestionError, *_RECORD_ERRORS) as exc:
@@ -263,18 +308,38 @@ class P0Run:
             started = self.clock()
             try:
                 retrieval = fetch_companyfacts(self.sec, cik)
-                source_id = self._record(w, retrieval, f"CIK{cik}")
+                self._save_raw(retrieval, f"CIK{cik}")
                 parsed = sn.parse_companyfacts(retrieval.payload, cik)  # type: ignore[arg-type]
+                where = {"provider": "sec", "stage": "sec_facts", "command": retrieval.command, "cik": cik}
+                if parsed.unsupported_taxonomy:
+                    # EXPECTED coverage gap (IFRS issuer): recorded on the retrieval so later reads know WHY there are
+                    # no facts, reported as expected_unsupported, never as a failure and never as zero.
+                    retrieval.notes.append(f"UNSUPPORTED_TAXONOMY:{parsed.unsupported_taxonomy}")
+                    self._record(w, retrieval, f"CIK{cik}")
+                    stage.expected_unsupported += 1
+                    report.expected_unsupported.append(
+                        {
+                            "stage": "sec_facts", "symbol": symbols[0], "symbols": list(symbols), "cik": cik,
+                            "kind": UnsupportedTaxonomyError.kind, "taxonomy": parsed.unsupported_taxonomy,
+                            "taxonomies": list(parsed.taxonomies),
+                            "message": f"companyfacts uses '{parsed.unsupported_taxonomy}' only "
+                            f"(taxonomies {list(parsed.taxonomies)}): fundamentals unavailable",
+                        }
+                    )  # fmt: skip
+                    for symbol in symbols:
+                        report.outcomes[symbol].facts_status = UnsupportedTaxonomyError.kind
+                    continue
+                source_id = self._record(w, retrieval, f"CIK{cik}")
                 for reject in parsed.rejects:
-                    report.warn("REJECTED_FACT_POINT", symbols[0], f"{reject['concept']}: {reject['error']}")
+                    report.warn("REJECTED_FACT_POINT", symbols[0], f"{reject['concept']}: {reject['error']}", **where)
                 for reason, n in parsed.skipped.items():
                     report.facts_skipped[reason] = report.facts_skipped.get(reason, 0) + n
                 if parsed.duplicates:
                     report.warn(
-                        "DUPLICATE_FACT_POINTS",
-                        symbols[0],
-                        f"{parsed.duplicates} repeated logical keys in the document",
-                    )
+                        "DUPLICATE_FACT_POINTS", symbols[0],
+                        f"{parsed.duplicates} repeated logical keys in the document", duplicates=parsed.duplicates,
+                        **where,
+                    )  # fmt: skip
                 if not parsed.points:
                     raise NoFactsError(
                         f"CIK {cik}: companyfacts holds no allow-listed us-gaap/dei facts "
@@ -283,12 +348,16 @@ class P0Run:
                 records = [p.to_record(source_id) for p in parsed.points]
                 report.counts("financial_facts").add(w.upsert_financial_facts(records))
                 for symbol in symbols:
-                    report.outcomes[symbol].facts, report.outcomes[symbol].fact_rows = True, len(records)
+                    outcome = report.outcomes[symbol]
+                    outcome.facts, outcome.fact_rows, outcome.facts_status = True, len(records), "OK"
                 stage.succeeded += 1
             except (IngestionError, *_RECORD_ERRORS) as exc:
                 self._fail(stage, "sec_facts", symbols[0], exc)
-            for symbol in symbols:
-                report.outcomes[symbol].seconds += (self.clock() - started).total_seconds()
+                for symbol in symbols:
+                    report.outcomes[symbol].facts_status = "FAILED"
+            finally:
+                for symbol in symbols:
+                    report.outcomes[symbol].seconds += (self.clock() - started).total_seconds()
         self._finish(stage)
 
 
@@ -310,6 +379,7 @@ def _snapshot_dict(snapshots) -> dict[str, object]:
             "listing_metrics": {sym: {k: metric(v) for k, v in ms.items()} for sym, ms in snap.listings.items()},
             "lines": snap.lines,
             "cross_checks": snap.cross_checks,
+            "coverage": snap.coverage,
         }
         for cik, snap in snapshots.items()
     }
@@ -331,13 +401,11 @@ def run_p0_sequence(db_path: Path, make_run: Callable[[str], P0Run], *, second_r
         snapshots1: dict = {}
         coverage1: dict = {}
         report["summary"] = {**_empty_summary(first), "fatal": first.fatal}
-        report["acceptance"] = [
-            pr.Criterion(
-                f"A{i}", "-", "-", "not measured: the run did not proceed", "NOT_EVALUATED", first.fatal
-            ).__dict__
-            for i in range(1, 14)
-        ]
+        criteria = pr.not_run_criteria(f"the run did not proceed ({first.fatal})")
+        report["acceptance"] = [c.to_dict() for c in criteria]
+        report["verdict"] = pr.verdict(first, criteria, report["summary"])  # type: ignore[arg-type]
         report["issues"] = [i.__dict__ for i in first.issues]
+        report["warnings"] = first.warnings
         return report
     validation1 = ms.validation(db_path)
     snapshots1 = ms.compute_snapshots(db_path, first.as_of)
@@ -348,11 +416,12 @@ def run_p0_sequence(db_path: Path, make_run: Callable[[str], P0Run], *, second_r
         validation2 = ms.validation(db_path) if not second.fatal else None
         report["second_run"] = second.to_dict()
     report["summary"] = pr.summarise(first, validation1, snapshots1, coverage1)
-    report["acceptance"] = [
-        c.__dict__
-        for c in pr.evaluate(first, validation1, snapshots1, coverage1, second=second, second_validation=validation2)
-    ]
+    criteria = pr.evaluate(first, validation1, snapshots1, coverage1, second=second, second_validation=validation2)
+    report["acceptance"] = [c.to_dict() for c in criteria]
+    report["verdict"] = pr.verdict(first, criteria, report["summary"], second)  # type: ignore[arg-type]
     report["issues"] = [i.__dict__ for i in first.issues]
+    report["warnings"] = first.warnings
+    report["expected_unsupported"] = first.expected_unsupported
     report["validation_after_run1"] = validation1
     report["metrics"] = _snapshot_dict(snapshots1)
     report["manifest"] = [s.__dict__ for s in MANIFEST]
@@ -376,6 +445,8 @@ def run_p0_sequence(db_path: Path, make_run: Callable[[str], P0Run], *, second_r
             "table_counts_after_run1": validation1["table_counts"],
             "table_counts_after_run2": validation2["table_counts"] if validation2 else None,
             "retrieval_rows_appended_run2": second.retrievals_recorded,
+            "expected_unsupported_run1": [e["symbol"] for e in first.expected_unsupported],
+            "expected_unsupported_run2": [e["symbol"] for e in second.expected_unsupported],
             "verdict": "PASS: no logical record was inserted or changed" if zero else "FAIL",
         }
         report["second_run_summary"] = pr.summarise(second, validation2 or validation1, snapshots1, coverage1)

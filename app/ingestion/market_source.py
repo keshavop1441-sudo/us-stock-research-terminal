@@ -10,6 +10,7 @@ several). 403/429 statuses are therefore invisible here and only the SEC client 
 counted as ``error``.
 """
 
+import warnings
 from collections.abc import Callable
 from datetime import date, datetime
 from importlib.metadata import PackageNotFoundError, version
@@ -44,6 +45,12 @@ class MarketData:
     def __init__(self, obb_getter: Callable[[], object], stats: RequestStats):
         self._get_obb = obb_getter
         self._stats = stats
+        # Python warnings raised inside OpenBB calls, kept so the report can attribute them (provider, command, symbol).
+        self.warnings: list[dict[str, str]] = []
+
+    def drain_warnings(self) -> list[dict[str, str]]:
+        taken, self.warnings = self.warnings, []
+        return taken
 
     def _call(self, provider: str, namespace: str, command: str, symbol: str, **kwargs: object) -> Retrieval:
         sent = provider_symbol(symbol, provider)
@@ -52,14 +59,24 @@ class MarketData:
             target = getattr(target, part)
         full = f"obb.{provider}.{namespace}.{command}"
         params = {"symbol": sent, "provider": provider, **{k: str(v) for k, v in kwargs.items()}}
-        try:
-            rows = _rows(getattr(target, command)(symbol=sent, provider=provider, **kwargs))  # explicit, as probed
-        except IngestionError:
-            self._stats.record(provider, "error")
-            raise
-        except Exception as exc:  # noqa: BLE001 - OpenBB raises many provider-specific types (OpenBBError, EmptyDataError, ...)
-            self._stats.record(provider, "error")
-            raise NetworkError(f"{full}({sent}): {type(exc).__name__}: {exc}") from exc
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            try:
+                rows = _rows(getattr(target, command)(symbol=sent, provider=provider, **kwargs))  # explicit, as probed
+            except IngestionError:
+                self._stats.record(provider, "error")
+                raise
+            except Exception as exc:  # noqa: BLE001 - OpenBB raises many provider-specific types
+                self._stats.record(provider, "error")
+                raise NetworkError(f"{full}({sent}): {type(exc).__name__}: {exc}") from exc
+            finally:
+                self.warnings.extend(
+                    {
+                        "provider": provider, "command": full, "symbol": symbol, "sent_symbol": sent,
+                        "category": w.category.__name__, "message": str(w.message),
+                    }
+                    for w in caught
+                )  # fmt: skip
         self._stats.record(provider, 200)
         return Retrieval(
             provider=provider,

@@ -59,6 +59,8 @@ class IssuerSnapshot:
     issuer: dict[str, MetricResult] = field(default_factory=dict)
     listings: dict[str, dict[str, MetricResult]] = field(default_factory=dict)
     cross_checks: dict[str, object] = field(default_factory=dict)
+    # what is available for this issuer: {"fundamentals": "OK" | "UNAVAILABLE:UNSUPPORTED_TAXONOMY:ifrs-full"}
+    coverage: dict[str, str] = field(default_factory=dict)
 
     def all_results(self) -> list[tuple[str, MetricResult]]:
         out = [(name, r) for name, r in self.issuer.items()]
@@ -267,11 +269,28 @@ def market_metrics(
 
 
 def build_snapshot(
-    cik: str, facts: Sequence, listings: Sequence[ListingInputs], primary_symbol: str, as_of: date
+    cik: str,
+    facts: Sequence,
+    listings: Sequence[ListingInputs],
+    primary_symbol: str,
+    as_of: date,
+    *,
+    multi_class: bool = False,
+    facts_unavailable: str | None = None,
 ) -> IssuerSnapshot:
+    """``multi_class`` says the ISSUER has several share classes even if only one listing was loaded (BRK-B).
+    ``facts_unavailable`` (e.g. ``UNSUPPORTED_TAXONOMY:ifrs-full``) says why no fundamentals exist: every fundamental
+    metric is then MISSING_INPUT with that reason, never a value and never 0."""
     index = StatementIndex(facts)
     snap = IssuerSnapshot(cik=cik, as_of=as_of)
     snap.issuer, snap.lines = fundamental_metrics(index, as_of)
+    multi_class = multi_class or len(listings) > 1
+    if facts_unavailable:
+        snap.issuer = {name: _missing(facts_unavailable) for name in snap.issuer}
+        snap.lines = {"_fundamentals": {"value": None, "reason": facts_unavailable}}
+        snap.coverage["fundamentals"] = f"UNAVAILABLE:{facts_unavailable}"
+    else:
+        snap.coverage["fundamentals"] = "OK" if facts else "NO_FACTS_STORED"
     caps = {lst.symbol: lst.quote_cap for lst in listings}
     cap = m.issuer_market_cap(caps, primary_symbol) if listings else _missing("NO_LISTINGS")
     primary = next((lst for lst in listings if lst.symbol == primary_symbol), None)
@@ -280,22 +299,50 @@ def build_snapshot(
     snap.issuer["issuer_market_cap"] = cap
     revenue_fy = snap.lines.get("revenue", {}).get("value")
     snap.issuer["price_to_sales"] = m.price_to_sales(cap.value if cap.ok else None, revenue_fy)
+    if facts_unavailable:
+        snap.issuer["price_to_sales"] = _missing(facts_unavailable)
     if not cap.ok:
         snap.issuer["price_to_sales"] = _with_flags(snap.issuer["price_to_sales"], "MARKET_CAP:" + str(cap.reason))
     snap.issuer["price_to_sales_ttm"] = m.price_to_sales(
         cap.value if cap.ok else None,
         snap.issuer["revenue_ttm"].value if snap.issuer["revenue_ttm"].ok else None,
     )
+    if facts_unavailable:
+        snap.issuer["price_to_sales_ttm"] = _missing(facts_unavailable)
     for listing in listings:
-        snap.listings[listing.symbol] = market_metrics(listing, as_of, snap.issuer, multi_class=len(listings) > 1)
+        snap.listings[listing.symbol] = market_metrics(listing, as_of, snap.issuer, multi_class=multi_class)
     # cross-checks (YAML M12): provider 52-week high vs ours; issuer cap vs close x single-class dei shares
     for listing in listings:
         ours = snap.listings[listing.symbol]["high_52w"]
         if ours.ok and listing.quote_year_high:
             snap.cross_checks[f"{listing.symbol}:year_high_diff"] = ours.value / listing.quote_year_high - 1
-    shares = snap.issuer["shares_outstanding"]
-    if primary and shares.ok and cap.ok and primary.bars and len(listings) == 1:
-        last_close = max((b for b in primary.bars if b[0] <= as_of), key=lambda b: b[0])[4]
-        if last_close:
-            snap.cross_checks["market_cap_vs_close_x_dei_shares"] = cap.value / (last_close * shares.value) - 1
+    snap.cross_checks["market_cap_check"] = _market_cap_check(
+        snap, cap, primary, listings, multi_class, facts_unavailable
+    )
     return snap
+
+
+def _market_cap_check(
+    snap, cap: MetricResult, primary, listings, multi_class: bool, facts_unavailable
+) -> dict[str, object]:
+    """YAML A12: issuer_market_cap vs last close x dei shares, ONLY for single-class issuers with reliable shares.
+
+    Always returns an entry saying whether the issuer is ELIGIBLE and, if not, why, so the report can state the
+    numerator (within tolerance), the denominator (eligible issuers) and every exclusion."""
+    shares = snap.issuer["shares_outstanding"]
+    result: dict[str, object] = {"eligible": False, "reason": None, "ratio_minus_one": None}
+    if multi_class:
+        result["reason"] = "MULTI_CLASS_ISSUER"
+    elif facts_unavailable:
+        result["reason"] = f"FACTS_UNAVAILABLE:{facts_unavailable}"
+    elif not cap.ok:
+        result["reason"] = f"MARKET_CAP:{cap.reason}"
+    elif not shares.ok:
+        result["reason"] = f"SHARES_UNRELIABLE:{shares.reason}"
+    elif primary is None or not [b for b in primary.bars if b[0] <= snap.as_of and b[4]]:
+        result["reason"] = "NO_CLOSE"
+    else:
+        last_close = max((b for b in primary.bars if b[0] <= snap.as_of and b[4]), key=lambda b: b[0])[4]
+        result["eligible"] = True
+        result["ratio_minus_one"] = cap.value / (last_close * shares.value) - 1
+    return result
