@@ -1069,7 +1069,7 @@ metrics:
     negative_data_behavior: "A negative component -> NOT_MEANINGFUL."
     restatement_behavior: *sec_vintage
     status: LIVE_VERIFIED
-    fallback: "raw XBRL LongTermDebtNoncurrent, LongTermDebtCurrent, ShortTermBorrowings, DebtCurrent."
+    fallback: "raw XBRL LongTermDebtNoncurrent, LongTermDebtCurrent, ShortTermBorrowings (else CommercialPaper); DebtCurrent is not used."
     limitations: "AAPL FY2025: 7,979M + 12,350M + 78,328M. BRK-B shows none of the three lines on a USD 1.2T balance sheet (company_type 'diversified'): absent is not zero. Operating-lease liabilities are deliberately excluded."
     sample_tested: {live: true, evidence: [E_LIVE_R2, E_LIVE_R3, E_FIXTURE_LIVE], symbols: [AAPL, RIVN, KOSS, BRK-B]}
 
@@ -1907,11 +1907,11 @@ p0_pilot:
   tag_selection:
     rule: "app/models/concepts.py: per period the first candidate tag that reports it wins; a lower-priority tag with a >1% different value for the same period makes the line unreliable (TAG_CONFLICT -> MISSING_INPUT). No tag is trusted blindly and no value is guessed."
     live_probed_in_phase_2: [RevenueFromContractWithCustomerExcludingAssessedTax, Revenues, SalesRevenueNet, PaymentsToAcquirePropertyPlantAndEquipment, NetCashProvidedByUsedInOperatingActivities, EarningsPerShareDiluted, NetIncomeLoss, ProfitLoss, LongTermDebtNoncurrent, LongTermDebt, EntityCommonStockSharesOutstanding]
-    not_probed_individually: [GrossProfit, OperatingIncomeLoss, StockholdersEquity, CashAndCashEquivalentsAtCarryingValue, Cash, ShortTermInvestments, MarketableSecuritiesCurrent, ShortTermBorrowings, LongTermDebtCurrent, WeightedAverageNumberOfDilutedSharesOutstanding, RevenueFromContractWithCustomerIncludingAssessedTax]
+    not_probed_individually: [GrossProfit, OperatingIncomeLoss, StockholdersEquity, CashAndCashEquivalentsAtCarryingValue, Cash, ShortTermInvestments, MarketableSecuritiesCurrent, ShortTermBorrowings, CommercialPaper, LongTermDebtCurrent, WeightedAverageNumberOfDilutedSharesOutstanding, RevenueFromContractWithCustomerIncludingAssessedTax]
     finding: "Phase 2 recorded candidate tags in a probe script and an OpenBB-field-to-concept dictionary, not an executable 'tested tag selection logic'. The selection above is new in Phase 3A; its tags outside live_probed_in_phase_2 are NOT_VERIFIED until the P0 live report shows them."
     net_income: "NetIncomeLoss only (attributable to the parent). ProfitLoss is never a fallback and is not stored."
     capex: "PaymentsToAcquirePropertyPlantAndEquipment only; absent -> FCF MISSING_INPUT."
-    debt: "ShortTermBorrowings + LongTermDebtCurrent + LongTermDebtNoncurrent at ONE balance-sheet date; any absent core line -> MISSING_INPUT; no explicit-no-debt evidence is ingested in P0, so a debt of 0 only arises from three explicitly reported zeros."
+    debt: "(ShortTermBorrowings, else CommercialPaper) + LongTermDebtCurrent + LongTermDebtNoncurrent at ONE balance-sheet date; CommercialPaper is a short-term borrowing instrument (how AAPL reports its short-term debt) and is read only where ShortTermBorrowings is absent for that date, two disagreeing tags are TAG_CONFLICT; DebtCurrent is deliberately NOT mapped (it already contains the current portion of long-term debt: double counting); CommercialPaper is NOT_VERIFIED live until the next live ingest shows it; any absent core line -> MISSING_INPUT; no explicit-no-debt evidence is ingested in P0, so a debt of 0 only arises from three explicitly reported zeros."
   periods:
     identification: "By the point's own start/end dates (period_kind), never by fy/fp, which describe the filing."
     ttm: "latest fiscal year + current YTD - prior-year YTD, one tag, YTD aligned to the fiscal year by dates (+-7 days); latest report a 10-K -> that fiscal year; misaligned -> NOT_COMPARABLE; missing prior YTD -> MISSING_INPUT."

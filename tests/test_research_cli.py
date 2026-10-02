@@ -665,3 +665,16 @@ def test_reads_during_a_refresh_are_unavailable_never_stale_data(loaded, hold):
             assert code == 1 and envelope["status"] == "ERROR" and envelope["data"] == {}
             assert envelope["errors"][0]["code"] == "DATABASE_UNAVAILABLE"
     assert loaded.call("universe")[1] == 0  # and it works again once the writer is gone
+
+
+def test_composed_ttm_provenance_reaches_the_evidence_packet(loaded):
+    """Every filing/period/tag a TTM metric was composed from is in the packet's provenance inputs for it."""
+    sections = packet(loaded)[0]["data"]["sections"]
+    inputs = {ref["line"]: ref for item in sections["fundamentals"]["items"] for ref in item["provenance"]["inputs"]}
+    revenue, eps = inputs["_ttm_revenue"], inputs["_ttm_diluted_eps"]
+    assert revenue["basis"] == "FY+YTD-YTD_PRIOR" and len(revenue["components"]) == 3
+    assert len(revenue["accessions"]) >= 2  # a 10-K and the 10-Q, not the 10-K alone
+    for component in (*revenue["components"], *eps["components"], *eps["guard_components"]):
+        assert component["accession"] and component["tag"] and component["period_end"] and component["form"]
+    assert {c["role"] for c in eps["components"]} == {"fiscal_year", "current_ytd", "prior_year_ytd"}
+    assert "_ttm_revenue_prior" in inputs  # revenue_growth_ttm_yoy also names the prior-year TTM

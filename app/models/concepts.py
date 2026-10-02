@@ -81,7 +81,17 @@ SPECS: tuple[ConceptSpec, ...] = (
     ConceptSpec(
         "short_term_investments", US_GAAP, ("ShortTermInvestments", "MarketableSecuritiesCurrent"), "USD", "instant"
     ),
-    ConceptSpec("short_term_debt", US_GAAP, ("ShortTermBorrowings",), "USD", "instant"),
+    ConceptSpec(
+        "short_term_debt",
+        US_GAAP,
+        ("ShortTermBorrowings", "CommercialPaper"),
+        "USD",
+        "instant",
+        "ShortTermBorrowings first; CommercialPaper (a short-term borrowing instrument, how e.g. Apple reports its "
+        "short-term debt) only where the first is not reported for the date. Two tags that disagree by more than 1% "
+        "for one date -> TAG_CONFLICT (unavailable). DebtCurrent is NOT mapped: it already contains the current "
+        "portion of long-term debt and would double count",
+    ),  # fmt: skip
     ConceptSpec("current_portion_long_term_debt", US_GAAP, ("LongTermDebtCurrent",), "USD", "instant"),
     ConceptSpec("long_term_debt", US_GAAP, ("LongTermDebtNoncurrent",), "USD", "instant"),
     ConceptSpec("equity", US_GAAP, ("StockholdersEquity",), "USD", "instant", "parent shareholders, excl. NCI"),

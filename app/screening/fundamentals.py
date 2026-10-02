@@ -92,6 +92,7 @@ class Ttm:
     basis: str  # 'FY' or 'FY+YTD-YTD_PRIOR'
     components: tuple[Fact, ...]
     flags: tuple[str, ...] = ()
+    guard: tuple[Fact, ...] = ()  # facts consulted only to validate the composition (EPS split guard), not summed
 
 
 @dataclass(frozen=True)
@@ -343,6 +344,7 @@ class StatementIndex:
                 outcome.ttm.basis,
                 outcome.ttm.components,
                 flags,
+                (fy_shares.fact, cur_shares.fact),
             )
         )
 

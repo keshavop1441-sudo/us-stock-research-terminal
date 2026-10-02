@@ -83,6 +83,48 @@ def _line_record(index: StatementIndex, line: str, end) -> dict[str, object]:
     }
 
 
+_TTM_ROLES = {
+    "FY": (("fiscal_year", 1),),
+    "FY+YTD-YTD_PRIOR": (("fiscal_year", 1), ("current_ytd", 1), ("prior_year_ytd", -1)),
+}
+
+
+def _fact_record(fact, role: str, sign: int | None = None) -> dict[str, object]:
+    rec: dict[str, object] = {
+        "role": role,
+        "tag": fact.concept,
+        "value": fact.value,
+        "accession": fact.accession,
+        "form": fact.form,
+        "filed": fact.filed.isoformat(),
+        "period_start": fact.period_start.isoformat() if fact.period_start else None,
+        "period_end": fact.period_end.isoformat(),
+    }
+    if sign is not None:
+        rec["sign"] = sign
+    return rec
+
+
+def _ttm_record(outcome) -> dict[str, object]:
+    """Provenance of a TTM value: EVERY fact (filing accession, period, tag) the composition used, with its sign, plus
+    the facts consulted only as a guard. Describes the calculation; never changes it."""
+    ttm = outcome.ttm
+    if ttm is None:
+        return {"value": None, "reason": outcome.reason, "state": outcome.state.value}
+    roles = _TTM_ROLES[ttm.basis]
+    components = [_fact_record(f, role, sign) for f, (role, sign) in zip(ttm.components, roles, strict=True)]
+    return {
+        "value": ttm.value,
+        "basis": ttm.basis,
+        "tag": ttm.tag,
+        "period_end": ttm.period_end.isoformat(),
+        "accessions": sorted({c["accession"] for c in components}),  # type: ignore[type-var]
+        "components": components,
+        "guard_components": [_fact_record(f, "split_guard_weighted_diluted_shares") for f in ttm.guard],
+        "flags": list(ttm.flags),
+    }
+
+
 def fundamental_metrics(
     index: StatementIndex, as_of: date
 ) -> tuple[dict[str, MetricResult], dict[str, dict[str, object]]]:
@@ -162,22 +204,22 @@ def fundamental_metrics(
     out["revenue_growth_ttm_yoy"] = _ttm_growth(index, "revenue", ttm_revenue)
     eps_ttm = index.ttm_eps()
     out["diluted_eps_ttm"] = eps_ttm.as_metric()
-    lines["_ttm_revenue"] = (
-        {
-            "basis": ttm_revenue.ttm.basis,
-            "tag": ttm_revenue.ttm.tag,
-            "period_end": ttm_revenue.ttm.period_end.isoformat(),
-        }
-        if ttm_revenue.ttm
-        else {"reason": ttm_revenue.reason}
+    lines["_ttm_revenue"] = _ttm_record(ttm_revenue)
+    lines["_ttm_revenue_prior"] = (
+        _ttm_record(index.ttm_prior_year("revenue", ttm_revenue.ttm)) if ttm_revenue.ttm else {"reason": "NO_TTM"}
     )
+    lines["_ttm_diluted_eps"] = _ttm_record(eps_ttm)
     # balance sheet
     sheet = index.balance_sheet()
     if not sheet.present:
         out["total_debt"] = m.total_debt(None, None, None, balance_sheet_present=False)
     else:
         lines["_balance_sheet"] = {"period_end": sheet.end.isoformat()}  # type: ignore[union-attr]
-        for line in ("cash", "equity", "short_term_debt", "current_portion_long_term_debt", "long_term_debt"):
+        for line in ("cash", "equity", "short_term_investments") + (
+            "short_term_debt",
+            "current_portion_long_term_debt",
+            "long_term_debt",
+        ):
             sel = sheet.values.get(line)
             lines[line] = (
                 _line_record(index, line, sheet.end)

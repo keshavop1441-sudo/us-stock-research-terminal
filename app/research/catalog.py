@@ -63,7 +63,7 @@ _METRICS = (
         "issuer",
         "fraction",
         "Trailing-twelve-month revenue vs the TTM one year earlier.",
-        ("revenue",),
+        ("_ttm_revenue", "_ttm_revenue_prior"),
     ),
     # profitability
     _m(
@@ -112,13 +112,13 @@ _METRICS = (
         "Free cash flow = operating cash flow - capex, latest fiscal year (USD).",
         ("operating_cash_flow", "capex"),
     ),
-    _m("revenue_ttm", "issuer", "usd", "Trailing-twelve-month revenue (USD).", ("revenue",)),
+    _m("revenue_ttm", "issuer", "usd", "Trailing-twelve-month revenue (USD).", ("_ttm_revenue",)),
     _m(
         "diluted_eps_ttm",
         "issuer",
         "usd_per_share",
         "Trailing-twelve-month diluted EPS (per-share sum, split-guarded).",
-        ("diluted_eps",),
+        ("_ttm_diluted_eps",),
     ),
     # balance sheet / leverage
     _m(
@@ -133,14 +133,14 @@ _METRICS = (
         "issuer",
         "usd",
         "Total debt - (cash + short-term investments); negative = net cash.",
-        ("cash", "short_term_investments"),
+        ("short_term_debt", "current_portion_long_term_debt", "long_term_debt", "cash", "short_term_investments"),
     ),
     _m(
         "debt_to_equity",
         "issuer",
         "ratio",
         "Total debt / stockholders' equity at the latest balance sheet.",
-        ("short_term_debt", "long_term_debt", "equity"),
+        ("short_term_debt", "current_portion_long_term_debt", "long_term_debt", "equity"),
     ),
     _m(
         "debt_to_equity_fy",
@@ -180,7 +180,7 @@ _METRICS = (
         True,
     ),
     _m("price_to_sales", "issuer", "ratio", "Issuer market cap / latest FISCAL-YEAR revenue.", ("revenue",), True),
-    _m("price_to_sales_ttm", "issuer", "ratio", "Issuer market cap / TTM revenue.", ("revenue",), True),
+    _m("price_to_sales_ttm", "issuer", "ratio", "Issuer market cap / TTM revenue.", ("_ttm_revenue",), True),
     # price metrics (per listing; PRICE returns, no dividends)
     _m(
         "price_return_1m",
@@ -218,7 +218,7 @@ _METRICS = (
         "listing",
         "ratio",
         "Last close / TTM diluted EPS; never produced for losses.",
-        ("diluted_eps",),
+        ("_ttm_diluted_eps",),
         True,
     ),
 )
