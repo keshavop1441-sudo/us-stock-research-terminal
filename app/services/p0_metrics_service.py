@@ -4,26 +4,49 @@ Nothing computed here is written back (CLAUDE.md: raw facts only, no per-ratio t
 database holds, so a metric is reproducible from the rows and their provenance.
 """
 
+from collections.abc import Iterable
 from datetime import date
 from pathlib import Path
 
 from app.database import access
 from app.ingestion.manifest import MANIFEST, P0Security, primary_symbol_for
+from app.models.symbols import canonical_symbol
 from app.screening.fundamentals import FY_KINDS, Fact, StatementIndex
 from app.screening.snapshot import CORE_LINES, IssuerSnapshot, ListingInputs, build_snapshot
 
 
+def _designate_primary(tickers: list[str], loaded: set[str]) -> tuple[str, str]:
+    """(primary listing, how it was designated). Only the audited P0 manifest designates a primary listing; for any
+    other issuer the first loaded listing (alphabetical) is used and the packet says it was NOT designated."""
+    static = {s.symbol for s in MANIFEST}
+    known = sorted(t for t in tickers if t in static)
+    if known:
+        primary, how = primary_symbol_for(known[0]), "P0_MANIFEST"
+    else:
+        primary, how = sorted(tickers)[0], "UNDESIGNATED_FIRST_LISTING"
+    if primary not in loaded:  # the designated primary failed to load: say so via the flag below
+        return sorted(loaded)[0], f"FALLBACK_{how}_PRIMARY_NOT_LOADED"
+    return primary, how
+
+
 def compute_snapshots(
-    db_path: Path, as_of: date, manifest: tuple[P0Security, ...] = MANIFEST
+    db_path: Path,
+    as_of: date,
+    manifest: tuple[P0Security, ...] = MANIFEST,
+    *,
+    symbols: Iterable[str] | None = None,
 ) -> dict[str, IssuerSnapshot]:
-    """One snapshot per issuer (CIK) that has at least one stored listing among the manifest symbols."""
-    wanted = {s.symbol for s in manifest}
+    """One snapshot per issuer (CIK) that has at least one stored listing among ``symbols`` (default: the manifest)."""
+    wanted = {canonical_symbol(s) for s in symbols} if symbols is not None else {s.symbol for s in manifest}
     snapshots: dict[str, IssuerSnapshot] = {}
     with access.reader(db_path) as r:
         securities = r.securities_of_issuers()
+        # Every STORED listing of a requested issuer is loaded, not only the requested ticker: the issuer-level cap
+        # is the designated primary listing's figure (asking for GOOG alone must still use GOOGL's quote when stored).
+        wanted_ciks = {row["cik"] for row in securities.iter_rows(named=True) if row["cik"] and row["ticker"] in wanted}
         by_cik: dict[str, list[dict]] = {}
         for row in securities.iter_rows(named=True):
-            if row["cik"] and row["ticker"] in wanted:
+            if row["cik"] in wanted_ciks:
                 by_cik.setdefault(row["cik"], []).append(row)
         for cik, rows in by_cik.items():
             facts = [
@@ -53,17 +76,16 @@ def compute_snapshots(
                         quote_year_high=quote["year_high"] if quote else None,
                     )
                 )
-            primary = primary_symbol_for(rows[0]["ticker"])
-            if primary not in {lst.symbol for lst in listings}:
-                primary = listings[0].symbol  # the designated primary failed to load: say so via the flag below
+            primary, designation = _designate_primary([r["ticker"] for r in rows], {lst.symbol for lst in listings})
             notes = r.fact_support_notes(cik)
             unavailable = next((n for n in notes if n.startswith("UNSUPPORTED_TAXONOMY:")), None)
             tickers = {x["ticker"] for x in rows}
-            multi_class = any("multi_class" in s.roles for s in manifest if s.symbol in tickers)
+            multi_class = any("multi_class" in s.roles for s in MANIFEST if s.symbol in tickers)
             snap = build_snapshot(
                 cik, facts, listings, primary, as_of, multi_class=multi_class, facts_unavailable=unavailable
             )
             snap.cross_checks["primary_listing"] = primary
+            snap.cross_checks["primary_listing_designation"] = designation
             snap.cross_checks["listings"] = sorted(lst.symbol for lst in listings)
             snapshots[cik] = snap
     return snapshots

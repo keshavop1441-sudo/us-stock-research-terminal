@@ -1,7 +1,6 @@
-"""Application settings, loaded from environment variables and an optional .env file."""
+"""Settings for the deterministic research engine, from environment variables and an optional .env file."""
 
 import os
-from enum import StrEnum
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -13,31 +12,17 @@ DEFAULT_DATABASE_PATH = Path("data/research.duckdb")
 
 # Settings field -> environment variable.
 _ENV_VARS = {
-    "ollama_base_url": "OLLAMA_BASE_URL",
-    "ollama_model": "OLLAMA_MODEL",
-    "fast_think": "FAST_THINK",
-    "deep_think": "DEEP_THINK",
     "database_path": "DATABASE_PATH",
     "sec_user_agent": "SEC_USER_AGENT",
 }
 
 
-class ThinkingMode(StrEnum):
-    FAST = "fast"
-    DEEP = "deep"
-    OFF = "off"
-
-
 class Settings(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "qwen3.5:4b"
-    fast_think: bool = False
-    deep_think: bool = True
     database_path: Path = DEFAULT_DATABASE_PATH
     # SEC fair-access policy: requests must identify the caller. Never hard-coded: the operator supplies it.
-    # Format: "<ApplicationName> <contact>", e.g. "MyResearchTerminal operator@example.org" (contact = email or URL).
+    # Format: "<ApplicationName> <contact>", e.g. "MyResearchApp operator@example.org" (contact = email or URL).
     sec_user_agent: str | None = None
 
     @field_validator("sec_user_agent")
@@ -50,23 +35,6 @@ class Settings(BaseModel):
         if not name or not contact or not ("@" in contact or contact.startswith(("http://", "https://"))):
             raise ValueError("SEC_USER_AGENT must be '<ApplicationName> <contact email or URL>'")
         return value
-
-    @field_validator("ollama_base_url")
-    @classmethod
-    def _check_base_url(cls, value: str) -> str:
-        value = value.strip().rstrip("/")
-        if not value.startswith(("http://", "https://")):
-            raise ValueError("OLLAMA_BASE_URL must start with http:// or https://")
-        return value
-
-    @property
-    def thinking_mode(self) -> ThinkingMode:
-        """FAST_THINK takes precedence when both flags are set."""
-        if self.fast_think:
-            return ThinkingMode.FAST
-        if self.deep_think:
-            return ThinkingMode.DEEP
-        return ThinkingMode.OFF
 
     @property
     def resolved_database_path(self) -> Path:

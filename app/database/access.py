@@ -22,7 +22,7 @@ from app.database.quality_repository import QualityRepository
 from app.database.read_repository import ReadRepository
 from app.database.write_repository import WriteRepository
 
-DEFAULT_READ_WAIT_SECONDS = 0.3  # ride out a millisecond-long UI write; do not hang while a refresh runs
+DEFAULT_READ_WAIT_SECONDS = 0.3  # ride out a millisecond-long write; do not hang while a refresh runs
 
 
 def _require_database_file(path: Path) -> None:
@@ -42,7 +42,7 @@ def reader(path: Path, *, wait: float = DEFAULT_READ_WAIT_SECONDS) -> Iterator[R
 
 @contextmanager
 def quality(path: Path, *, wait: float = DEFAULT_READ_WAIT_SECONDS) -> Iterator[QualityRepository]:
-    """Read-only data-quality checks (ingestion validation). Not for the AI tool layer."""
+    """Read-only data-quality checks (ingestion validation). Not used by the research commands."""
     _require_database_file(path)
     con = open_connection(path, wait=wait)
     try:

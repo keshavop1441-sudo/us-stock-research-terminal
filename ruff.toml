@@ -12,3 +12,6 @@ ignore = ["UP037"]
 "scripts/*.py" = ["E402"]
 # Audit tool (not application code): dense one-line probe declarations are easier to review than wrapped ones.
 "scripts/audit/*.py" = ["E402", "E501", "S314"]
+
+# One metric per line is easier to review than wrapped definitions.
+"app/research/catalog.py" = ["E501"]

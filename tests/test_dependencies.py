@@ -118,6 +118,9 @@ def test_every_third_party_import_in_the_tests_is_declared():
 
 def test_forbidden_infrastructure_is_not_a_direct_dependency():
     forbidden = {
+        "streamlit",
+        "plotly",
+        "ollama",
         "fastapi",
         "flask",
         "django",
@@ -142,8 +145,9 @@ def test_ci_targets_python_314_on_linux_and_windows_with_hash_checked_installs()
     assert "3.13" not in workflow and "py313" not in workflow
     assert "windows-latest" in workflow and "ubuntu-latest" in workflow
     assert "--require-hashes -r requirements-dev.lock" in workflow
-    assert "START_TERMINAL.bat /setup-only" in workflow and "UPDATE_DATA.bat /nopause" in workflow
     assert "git diff --exit-code requirements.lock requirements-dev.lock" in workflow  # lock freshness is enforced
+    assert "scripts/package_skill.py" in workflow  # the Skill package is built and verified on both platforms
+    assert "research.py doctor" in workflow
 
 
 def test_no_leftover_python_313_configuration():

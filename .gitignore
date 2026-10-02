@@ -25,3 +25,7 @@ data/*
 Thumbs.db
 .idea/
 .vscode/
+
+# Skill packaging output and local research data
+dist/
+research_data/

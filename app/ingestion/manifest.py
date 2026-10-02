@@ -79,16 +79,16 @@ MANIFEST: tuple[P0Security, ...] = (
 SYMBOLS = tuple(s.symbol for s in MANIFEST)
 
 
-def primary_symbol_for(symbol: str) -> str:
+def primary_symbol_for(symbol: str, manifest: tuple[P0Security, ...] = MANIFEST) -> str:
     """The designated primary listing of the issuer that ``symbol`` belongs to (itself unless it is a second class)."""
-    by_symbol = {s.symbol: s for s in MANIFEST}
+    by_symbol = {s.symbol: s for s in manifest}
     entry = by_symbol[canonical_symbol(symbol)]
-    group = [s for s in MANIFEST if s.issuer == entry.issuer]
+    group = [s for s in manifest if s.issuer == entry.issuer]
     return next(s.symbol for s in group if s.primary_listing)
 
 
-def manifest_digest() -> str:
-    payload = [[s.symbol, s.issuer, list(s.roles), s.phase2_cik, s.primary_listing] for s in MANIFEST]
+def manifest_digest(manifest: tuple[P0Security, ...] = MANIFEST) -> str:
+    payload = [[s.symbol, s.issuer, list(s.roles), s.phase2_cik, s.primary_listing] for s in manifest]
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 

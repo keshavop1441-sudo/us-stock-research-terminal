@@ -11,7 +11,7 @@ process holds the writer lock and one transaction for its whole run. Consequence
 * a failure while FETCHING or NORMALISING one symbol is caught, recorded in ``report.issues`` and that symbol is
   skipped; the other symbols are still written;
 * a DATABASE error (a bug) aborts the run and rolls EVERYTHING back (``DATABASE_ERROR``): there is no half-written
-  state. Readers see "unavailable" for the duration, as for any refresh (``status_service``).
+  state. Readers see "unavailable" for the duration, as for any refresh (``app.services.db``).
 
 Stage order: identity -> prices -> quotes -> sec_facts. A symbol without an identity is not fetched further.
 """
@@ -61,14 +61,19 @@ class P0Run:
         manifest: tuple[P0Security, ...] = MANIFEST,
         price_start: date = PRICE_HISTORY_START,
         clock: Callable[[], datetime] = utc_now,
+        stages: tuple[str, ...] = STAGES,
     ):
+        unknown = set(stages) - set(STAGES)
+        if unknown or "identity" not in stages:
+            raise ValueError(f"stages must include 'identity' and be a subset of {STAGES}; got {stages}")
+        self.run_stages = stages
         self.db_path, self.sec, self.market, self.stats = db_path, sec, market, stats
         self.manifest, self.price_start, self.clock, self.as_of = manifest, price_start, clock, as_of
         self.raw = RawStore(raw_dir, run_id) if raw_dir else None
         self.report = RunReport(
             run_id=run_id,
             mode=mode,
-            manifest_digest=manifest_digest(),
+            manifest_digest=manifest_digest(manifest),
             symbols=[s.symbol for s in manifest],
             as_of=as_of,
             stages={name: StageResult(name) for name in STAGES},
@@ -93,9 +98,12 @@ class P0Run:
             try:
                 with access.writer(self.db_path, "P0 ingestion") as w:
                     self._identity(w)
-                    self._prices(w)
-                    self._quotes(w)
-                    self._facts(w)
+                    if "prices" in self.run_stages:
+                        self._prices(w)
+                    if "quotes" in self.run_stages:
+                        self._quotes(w)
+                    if "sec_facts" in self.run_stages:
+                        self._facts(w)
             except DatabaseUnavailableError as exc:
                 report.fatal = "DATABASE_LOCKED"
                 report.issue("run", None, "DATABASE_LOCKED", str(exc))

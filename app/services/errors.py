@@ -1,4 +1,4 @@
-"""Errors that service functions raise for the UI to display."""
+"""Errors that service functions raise for the research commands to report."""
 
 from app.models.status import RefreshStatus
 

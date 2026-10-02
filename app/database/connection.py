@@ -1,10 +1,9 @@
 """Opening DuckDB connections and initialising the database.
 
 Every connection is short-lived (open, work, close) and uses the same read-write configuration:
-DuckDB refuses to open one file with mixed configurations inside a single process, and Streamlit
-serves all sessions from one process. A ``read_only`` flag would therefore NOT be a usable security
-boundary here; read/write separation is done at the repository level (see ``read_repository`` and
-``write_repository``).
+DuckDB refuses to open one file with mixed configurations inside a single process. A ``read_only`` flag would
+therefore NOT be a usable security boundary here; read/write separation is done at the repository level
+(see ``read_repository`` and ``write_repository``).
 """
 
 import re

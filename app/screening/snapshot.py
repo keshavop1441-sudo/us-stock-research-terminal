@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from app.screening import metrics as m
-from app.screening.fundamentals import FY_KINDS, StatementIndex
+from app.screening.fundamentals import FY_KINDS, INSTANT_KINDS, StatementIndex
 from app.screening.metrics import MetricResult, MetricState
 
 RETURN_HORIZONS = {
@@ -104,6 +104,12 @@ def fundamental_metrics(
             "gross_margin",
             "operating_margin",
             "net_margin",
+            "gross_margin_change_yoy",
+            "operating_margin_change_yoy",
+            "net_margin_change_yoy",
+            "debt_to_equity_fy",
+            "debt_to_equity_prior_fy",
+            "debt_to_equity_change_yoy",
         ):
             out[name] = reason
     else:
@@ -143,6 +149,13 @@ def fundamental_metrics(
         else:
             out["fcf"] = m.free_cash_flow(cfo.value if cfo else None, capex.value if capex else None)
         out["fcf_growth_yoy"] = _fcf_growth(index, fy_end)
+        for name, line in (
+            ("gross_margin_change_yoy", "gross_profit"),
+            ("operating_margin_change_yoy", "operating_income"),
+            ("net_margin_change_yoy", "net_income_to_common"),
+        ):
+            out[name] = _margin_change(index, line, fy_end)
+        out.update(_leverage_change(index, fy_end))
     # trailing twelve months
     ttm_revenue = index.ttm("revenue")
     out["revenue_ttm"] = ttm_revenue.as_metric()
@@ -241,6 +254,58 @@ def _fcf_growth(index: StatementIndex, fy_end: date) -> MetricResult:
     prior = m.free_cash_flow(cfo[1].value, capex[1].value)
     blocked = m._depends_on(now, prior)  # noqa: SLF001 - same package, reuse the "MISSING wins" rule
     return blocked or m.growth_rate(now.value, prior.value)
+
+
+def _margin_change(index: StatementIndex, line: str, fy_end: date) -> MetricResult:
+    """Margin(now) - margin(prior year) in fraction points. The numerator AND revenue of BOTH years must come from the
+    same filing (a restated revenue paired with an unrestated profit would invent a margin change)."""
+    top, revenue = index.annual_pair(line, fy_end), index.annual_pair("revenue", fy_end)
+    if top is None or revenue is None:
+        return _missing("NO_FILING_REPORTS_BOTH_YEARS")
+    if (top[0].accession, top[1].accession) != (revenue[0].accession, revenue[1].accession):
+        return MetricResult(MetricState.NOT_COMPARABLE, None, "MARGIN_INPUTS_FROM_DIFFERENT_FILINGS")
+    comparable = m.comparable_year_over_year(
+        (revenue[0].period_start, revenue[0].period_end), (revenue[1].period_start, revenue[1].period_end)
+    )
+    if not comparable.ok:
+        return comparable
+    return m.margin_change(m.margin(top[0].value, revenue[0].value), m.margin(top[1].value, revenue[1].value))
+
+
+_DEBT_LINES = ("short_term_debt", "current_portion_long_term_debt", "long_term_debt")
+
+
+def _leverage_change(index: StatementIndex, fy_end: date) -> dict[str, MetricResult]:
+    """Debt/equity at the fiscal-year end and one year earlier, BOTH read from the single filing (the annual report
+    that carries the fiscal year's revenue pair) so the two balance sheets are on one vintage. Debt follows the usual
+    rule: absent components are never zero (``total_debt`` is MISSING_INPUT unless all core lines are reported)."""
+    revenue = index.annual_pair("revenue", fy_end)
+    if revenue is None:
+        gone = _missing("NO_FILING_REPORTS_BOTH_YEARS")
+        return {"debt_to_equity_fy": gone, "debt_to_equity_prior_fy": gone, "debt_to_equity_change_yoy": gone}
+    filing = revenue[0].accession
+
+    def ratio(end: date) -> MetricResult:
+        picked = {
+            line: index.select(line, end=end, kinds=INSTANT_KINDS, accession=filing)
+            for line in (*_DEBT_LINES, "equity")
+        }
+        conflict = next(
+            (sel.problem for sel in picked.values() if sel.problem and sel.problem.startswith("TAG_CONFLICT")), None
+        )
+        if conflict:
+            return _missing(conflict)
+        debt = m.total_debt(
+            *(picked[line].value for line in _DEBT_LINES), balance_sheet_present=True, explicit_no_debt_evidence=False
+        )
+        return m.debt_to_equity(debt, picked["equity"].value)
+
+    now, prior = ratio(revenue[0].period_end), ratio(revenue[1].period_end)
+    return {
+        "debt_to_equity_fy": now,
+        "debt_to_equity_prior_fy": prior,
+        "debt_to_equity_change_yoy": m.leverage_change(now, prior),
+    }
 
 
 def market_metrics(

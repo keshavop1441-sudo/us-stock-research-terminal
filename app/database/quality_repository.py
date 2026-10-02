@@ -1,7 +1,7 @@
 """Data-quality diagnostics: named, fixed SQL that counts rule violations and summarises retrievals.
 
-Deliberately NOT part of ``ReadRepository``: that class is the only database interface the AI tool layer may ever
-receive and its public surface is pinned by tests. These checks are for the ingestion/validation services
+Deliberately NOT part of ``ReadRepository``: that class is the only database interface the research commands read
+through and its public surface is pinned by tests. These checks are for the ingestion/validation services
 (``access.quality``).
 """
 

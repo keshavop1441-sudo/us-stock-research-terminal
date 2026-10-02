@@ -1,22 +1,9 @@
-"""Plain data models describing the health of the terminal's components."""
+"""Plain data models describing the health of the engine's components."""
 
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
 
 from pydantic import BaseModel, Field
-
-
-class ProviderStatus(BaseModel):
-    """Availability of an LLM provider (e.g. a local Ollama server)."""
-
-    name: str
-    base_url: str | None = None
-    available: bool
-    detail: str
-    configured_model: str | None = None
-    model_installed: bool | None = None  # None = unknown (provider unreachable)
-    installed_models: list[str] = Field(default_factory=list)
 
 
 class PackageStatus(BaseModel):
@@ -57,17 +44,3 @@ class RefreshStatus(BaseModel):
     operation: str | None = None
     pid: int | None = None
     started_at: datetime | None = None
-
-
-class DataStatus(BaseModel):
-    """Database health. ``data_state`` says whether the figures are live, cached, or unavailable."""
-
-    database: DatabaseStatus
-    data_state: Literal["live", "stale", "unavailable"]
-    as_of: datetime | None = None  # when the counts/last_sync were actually read
-    notice: str | None = None  # human-readable reason when data_state is not "live"
-    refresh: RefreshStatus = Field(default_factory=RefreshStatus)
-    counts: dict[str, int | None] = Field(default_factory=dict)  # None = unavailable
-    last_sync: datetime | None = None  # None = never synchronized
-    openbb: OpenBBStatus
-    ollama: ProviderStatus

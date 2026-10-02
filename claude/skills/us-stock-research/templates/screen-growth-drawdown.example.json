@@ -1,0 +1,13 @@
+{
+  "name": "tech down 30-50% with growth, positive FCF, P/S < 5, improving margins, leverage not worsening",
+  "classification": {"taxonomy": "nasdaq", "sector": "Technology"},
+  "criteria": [
+    {"metric": "drawdown_from_52w_high", "op": "between", "low": -50, "high": -30, "unit": "percent"},
+    {"metric": "revenue_growth_yoy", "op": "gt", "value": 15, "unit": "percent"},
+    {"metric": "eps_growth_yoy", "op": "gt", "value": 15, "unit": "percent"},
+    {"metric": "fcf", "op": "gt", "value": 0},
+    {"metric": "price_to_sales", "op": "lt", "value": 5},
+    {"metric": "gross_margin_change_yoy", "op": "gt", "value": 0, "unit": "fraction"},
+    {"metric": "debt_to_equity_change_yoy", "op": "lte", "value": 0}
+  ]
+}
