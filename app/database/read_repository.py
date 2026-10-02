@@ -6,6 +6,8 @@ read methods, never SQL, and holds no write operations. It does NOT depend on ``
 process, so the boundary is the interface, not a connection flag.)
 """
 
+import json
+
 import duckdb
 import polars as pl
 
@@ -14,6 +16,8 @@ from app.database.migrations import read_schema_version
 from app.database.schema import TABLES
 from app.models.identifiers import normalize_cik, normalize_ticker
 
+# Named tuple, not `except ValueError, AttributeError:` (3.14-only syntax; see app/database/locking.py).
+_BAD_DETAIL = (ValueError, AttributeError)
 _SECURITY_COLUMNS = "security_id, cik, ticker, name, exchange, sector, industry, is_active"
 
 
@@ -93,6 +97,23 @@ class ReadRepository:
             "ORDER BY concept, period_end, filed_date, accession_no",
             [normalize_cik(cik)],
         )
+
+    def fact_support_notes(self, cik: int | str) -> list[str]:
+        """Notes the latest SEC companyfacts retrieval of an issuer recorded (e.g. ``UNSUPPORTED_TAXONOMY:ifrs-full``).
+
+        They say WHY an issuer has no stored facts, so "no facts" is never read as "zero"."""
+        parameters = json.dumps({"cik": normalize_cik(cik)}, sort_keys=True)
+        row = self._con.execute(
+            "SELECT detail FROM sources WHERE provider = 'sec' AND dataset = 'companyfacts' AND parameters = ? "
+            "ORDER BY retrieved_at DESC, source_id DESC LIMIT 1",
+            [parameters],
+        ).fetchone()
+        if not row or not row[0]:
+            return []
+        try:
+            return [str(n) for n in json.loads(row[0]).get("notes", [])]
+        except _BAD_DETAIL:
+            return []
 
     def filings(self, cik: int | str) -> pl.DataFrame:
         return self._frame(

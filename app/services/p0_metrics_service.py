@@ -56,7 +56,13 @@ def compute_snapshots(
             primary = primary_symbol_for(rows[0]["ticker"])
             if primary not in {lst.symbol for lst in listings}:
                 primary = listings[0].symbol  # the designated primary failed to load: say so via the flag below
-            snap = build_snapshot(cik, facts, listings, primary, as_of)
+            notes = r.fact_support_notes(cik)
+            unavailable = next((n for n in notes if n.startswith("UNSUPPORTED_TAXONOMY:")), None)
+            tickers = {x["ticker"] for x in rows}
+            multi_class = any("multi_class" in s.roles for s in manifest if s.symbol in tickers)
+            snap = build_snapshot(
+                cik, facts, listings, primary, as_of, multi_class=multi_class, facts_unavailable=unavailable
+            )
             snap.cross_checks["primary_listing"] = primary
             snap.cross_checks["listings"] = sorted(lst.symbol for lst in listings)
             snapshots[cik] = snap

@@ -57,3 +57,9 @@ class NoFactsError(IngestionError):
     """The document is valid but holds none of the allow-listed concepts (e.g. a foreign filer reporting under IFRS)."""
 
     kind = "NO_ALLOWLISTED_FACTS"
+
+
+class UnsupportedTaxonomyError(IngestionError):
+    """EXPECTED, not a failure: the issuer reports under a taxonomy P0 deliberately does not support (IFRS)."""
+
+    kind = "UNSUPPORTED_TAXONOMY"

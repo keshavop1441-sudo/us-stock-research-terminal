@@ -24,7 +24,12 @@ jobs:
       - name: Run P0 (ingest, validate, ingest again, validate idempotency, report)
         env:
           SEC_USER_AGENT: ${{ vars.SEC_USER_AGENT }}
-        run: python scripts/run_p0.py --db "$RUNNER_TEMP/p0_pilot.duckdb" --out-dir p0_report
+        run: |
+          code=0
+          python scripts/run_p0.py --db "$RUNNER_TEMP/p0_pilot.duckdb" --out-dir p0_report || code=$?
+          # 4 = ran cleanly but some acceptance criterion is PARTIAL/DEFERRED/NOT_EVALUABLE: visible, not a job failure
+          if [ "$code" = "4" ]; then echo "::warning::P0 is INCOMPLETE (see the report)"; exit 0; fi
+          exit $code
       - name: Publish the report summary
         if: always()
         run: cat p0_report/*.md >> "$GITHUB_STEP_SUMMARY"

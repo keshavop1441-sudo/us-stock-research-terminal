@@ -40,6 +40,7 @@ class StageResult:
     attempted: int = 0
     succeeded: int = 0
     failed: int = 0
+    expected_unsupported: int = 0  # attempted but intentionally outside supported coverage (not a failure)
 
     @property
     def seconds(self) -> float | None:
@@ -54,6 +55,7 @@ class SymbolOutcome:
     price: bool = False
     quote: bool = False
     facts: bool = False
+    facts_status: str = "NOT_RUN"  # OK | FAILED | UNSUPPORTED_TAXONOMY | NOT_RUN
     price_rows: int = 0
     price_first: date | None = None
     price_last: date | None = None
@@ -77,7 +79,10 @@ class RunReport:
     outcomes: dict[str, SymbolOutcome] = field(default_factory=dict)
     tables: dict[str, TableCounts] = field(default_factory=dict)
     issues: list[Issue] = field(default_factory=list)
-    warnings: list[dict[str, object]] = field(default_factory=list)  # {category, symbol, message}
+    # {category, symbol, provider, stage, message, details}: enough to identify the affected security and provider
+    warnings: list[dict[str, object]] = field(default_factory=list)
+    # issuers whose data class is intentionally unsupported: {stage, symbol, cik, kind, taxonomies, message}
+    expected_unsupported: list[dict[str, object]] = field(default_factory=list)
     retrievals_recorded: int = 0  # rows appended to ``sources`` by this run
     fallback_retrievals: int = 0
     requests: dict[str, object] = field(default_factory=dict)
@@ -92,8 +97,22 @@ class RunReport:
     def issue(self, stage: str, symbol: str | None, kind: str, message: str) -> None:
         self.issues.append(Issue(stage, symbol, kind, message))
 
-    def warn(self, category: str, symbol: str | None, message: str) -> None:
-        self.warnings.append({"category": category, "symbol": symbol, "message": message})
+    def warn(
+        self,
+        category: str,
+        symbol: str | None,
+        message: str,
+        *,
+        provider: str | None = None,
+        stage: str | None = None,
+        **details: object,
+    ) -> None:
+        self.warnings.append(
+            {
+                "category": category, "symbol": symbol, "provider": provider, "stage": stage,
+                "message": message, "details": details,
+            }
+        )  # fmt: skip
 
     @property
     def runtime_seconds(self) -> float | None:

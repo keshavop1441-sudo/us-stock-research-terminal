@@ -86,17 +86,21 @@ def count(db_path, table):
 # --- the happy path ------------------------------------------------------------------------------------------------
 
 
-def test_every_stage_runs_and_only_the_foreign_filer_lacks_facts(completed):
+def test_every_stage_runs_and_the_ifrs_issuer_is_an_expected_gap_not_a_failure(completed):
     _, report = completed
     run = report["first_run"]
     assert run["fatal"] is None
-    assert {n: s["status"] for n, s in run["stages"].items()} == {
-        "identity": "OK", "prices": "OK", "quotes": "OK", "sec_facts": "PARTIAL",
-    }  # fmt: skip
-    assert [(i["symbol"], i["kind"]) for i in run["issues"]] == [
-        ("TSM", "NO_ALLOWLISTED_FACTS")
-    ]  # expected ADR gap, recorded
-    assert run["stages"]["identity"]["succeeded"] == 14 and run["stages"]["sec_facts"]["attempted"] == 13  # 13 issuers
+    assert {n: s["status"] for n, s in run["stages"].items()} == dict.fromkeys(
+        ("identity", "prices", "quotes", "sec_facts"), "OK"
+    )
+    assert run["issues"] == []  # no genuine failure
+    facts = run["stages"]["sec_facts"]
+    assert (facts["attempted"], facts["succeeded"], facts["failed"], facts["expected_unsupported"]) == (13, 12, 0, 1)
+    assert run["stages"]["identity"]["succeeded"] == 14
+    assert [(e["symbol"], e["kind"], e["taxonomy"]) for e in run["expected_unsupported"]] == [
+        ("TSM", "UNSUPPORTED_TAXONOMY", "ifrs-full")
+    ]
+    assert run["outcomes"]["TSM"]["facts_status"] == "UNSUPPORTED_TAXONOMY" and not run["outcomes"]["TSM"]["facts"]
 
 
 def test_multi_class_listings_share_one_issuer_and_one_market_cap(completed):
@@ -152,10 +156,9 @@ def test_validation_finds_no_violation_after_either_run(completed):
         "integrity"
     ]
     acceptance = {c["id"]: c["status"] for c in report["acceptance"]}
-    assert acceptance["A6"] == acceptance["A11"] == acceptance["A13"] == "PASS"
-    assert all(
-        acceptance[k] == "NOT_EVALUATED" for k in ("A1", "A3", "A4", "A5", "A7", "A8", "A12")
-    )  # simulated: never claimed
+    assert acceptance["A6"] == acceptance["A13"] == "PASS"  # every required component is mechanical and was measured
+    assert acceptance["A11"] == "PARTIAL"  # the re-run component passed; three components are test-verified only
+    assert all(acceptance[k] != "PASS" for k in ("A1", "A3", "A4", "A5", "A7", "A8", "A9", "A10", "A12"))  # simulated
 
 
 def test_provenance_of_every_retrieval(completed):
@@ -255,11 +258,13 @@ def test_without_sec_user_agent_nothing_is_fetched_or_written_and_the_run_says_w
     assert {s.status for s in run.stages.values()} == {"SKIPPED"}
 
 
-def test_a_sequence_without_user_agent_reports_every_criterion_as_not_evaluated(rig):
+def test_a_sequence_without_user_agent_reports_every_criterion_as_not_evaluable(rig):
     rig.user_agent = None
     report = run_p0_sequence(rig.db_path, lambda run_id: rig.make(run_id))
     assert report["summary"]["fatal"] == "SEC_USER_AGENT_MISSING"
-    assert {c["status"] for c in report["acceptance"]} == {"NOT_EVALUATED"} and len(report["acceptance"]) == 13
+    assert {c["status"] for c in report["acceptance"]} == {"NOT_EVALUABLE"} and len(report["acceptance"]) == 13
+    assert report["verdict"]["overall"] == "NOT_RUN" and report["verdict"]["p1_gate"] == "CLOSED"
+    assert report["verdict"]["pipeline_execution"]["status"] == "DID_NOT_RUN"
 
 
 def test_sec_403_stops_all_sec_traffic_and_is_recorded_for_every_symbol(rig):
@@ -294,7 +299,7 @@ def test_a_persistent_429_fails_that_issuer_only(rig):
     rig.sec.forced["companyfacts/CIK0000320193"] = [429] * 10
     run = rig.run()
     failures = [(i.symbol, i.kind) for i in run.issues if i.stage == "sec_facts"]
-    assert ("AAPL", "HTTP_429") in failures and ("TSM", "NO_ALLOWLISTED_FACTS") in failures and len(failures) == 2
+    assert failures == [("AAPL", "HTTP_429")]  # TSM is an expected gap, not a failure
     assert run.outcomes["NVDA"].facts and not run.outcomes["AAPL"].facts
 
 
@@ -447,3 +452,307 @@ def test_sec_request_volume_is_two_per_issuer_plus_the_ticker_map(rig):
     assert run.requests["requests_by_provider"]["sec"] == 1 + 13 * 2
     assert run.requests["max_requests_in_any_second"]["sec"] >= 1
     assert isinstance(rig.sec.transport(), httpx.MockTransport)
+
+
+# --- Phase 3A hardening: acceptance semantics, TSM/IFRS, warning attribution -------------------------------------
+
+
+def evaluate_forced_live(rig, *, mutate_first=None, mutate_snapshots=None):
+    """Run twice and evaluate with ``mode == LIVE``: this exercises the LIVE evaluation LOGIC on SIMULATED data.
+
+    It proves how thresholds, numerators and denominators are computed. It is never evidence about a provider.
+    """
+    from app.ingestion import p0_report as pr
+
+    first = rig.make("a").run()
+    first.mode = "LIVE"
+    if mutate_first:
+        mutate_first(first)
+    validation = ms.validation(rig.db_path)
+    snapshots = ms.compute_snapshots(rig.db_path, AS_OF)
+    if mutate_snapshots:
+        mutate_snapshots(snapshots)
+    coverage = ms.fiscal_year_coverage(rig.db_path, sorted(snapshots))
+    second = rig.make("b").run()
+    validation2 = ms.validation(rig.db_path)
+    criteria = pr.evaluate(first, validation, snapshots, coverage, second=second, second_validation=validation2)
+    return {c.id: c for c in criteria}, first
+
+
+def comps(criterion):
+    return {c.name: c for c in criterion.components}
+
+
+def test_a12_without_nasdaq_revenue_is_partial_never_pass_and_keeps_the_other_checks(rig):
+    criteria, _ = evaluate_forced_live(rig)
+    a12 = criteria["A12"]
+    parts = comps(a12)
+    assert parts["week52_high_vs_nasdaq"].status == "PASS" and parts["market_cap_vs_close_x_shares"].status == "PASS"
+    assert parts["revenue_vs_nasdaq"].status == "DEFERRED" and "not ingested" in parts["revenue_vs_nasdaq"].observed
+    assert a12.status == "PARTIAL"  # two components were evaluated and passed; the third was not evaluated
+    assert "Nasdaq revenue: not ingested" in a12.to_dict()["observed"]
+
+
+def test_market_cap_check_reports_numerator_denominator_percentage_and_every_exclusion(rig):
+    criteria, _ = evaluate_forced_live(rig)
+    observed = comps(criteria["A12"])["market_cap_vs_close_x_shares"].observed
+    assert "10/10 eligible single-class issuers within 2%" in observed and "100.0%" in observed
+    assert "GOOGL/GOOG (MULTI_CLASS_ISSUER)" in observed and "BRK-B (MULTI_CLASS_ISSUER)" in observed
+    assert "TSM (FACTS_UNAVAILABLE:UNSUPPORTED_TAXONOMY:ifrs-full)" in observed
+    assert "3 excluded" in observed  # 13 issuers = 10 eligible + Alphabet + Berkshire + TSMC
+
+
+def test_market_cap_pass_requires_at_least_90_percent_of_the_eligible_issuers(rig):
+    rig.obb.cap_scale["AAPL"] = 1.5  # one of ten eligible issuers is off by 50%
+    criteria, _ = evaluate_forced_live(rig)
+    cap = comps(criteria["A12"])["market_cap_vs_close_x_shares"]
+    assert "9/10" in cap.observed and "90.0%" in cap.observed and cap.status == "PASS"  # exactly the threshold
+    rig.obb.cap_scale["NVDA"] = 0.5  # a second one: 8/10 = 80%
+    criteria, _ = evaluate_forced_live(rig)
+    cap = comps(criteria["A12"])["market_cap_vs_close_x_shares"]
+    assert "8/10" in cap.observed and "80.0%" in cap.observed and cap.status == "FAIL"
+    assert criteria["A12"].status == "FAIL"  # a measured miss is decisive even though revenue is deferred
+
+
+def test_without_any_eligible_issuer_the_market_cap_check_is_not_evaluable_not_a_pass(rig):
+    def nobody_is_eligible(snapshots):
+        for snap in snapshots.values():
+            snap.cross_checks["market_cap_check"] = {"eligible": False, "reason": "TEST", "ratio_minus_one": None}
+
+    criteria, _ = evaluate_forced_live(rig, mutate_snapshots=nobody_is_eligible)
+    cap = comps(criteria["A12"])["market_cap_vs_close_x_shares"]
+    assert cap.status == "NOT_EVALUABLE" and cap.observed.startswith("0/0 eligible")
+    assert criteria["A12"].status == "PARTIAL"
+
+
+def test_no_criterion_is_pass_while_a_required_component_was_not_evaluated(rig, completed):
+    """The brief's final check: over simulated AND forced-live evaluations, PASS implies every component PASS."""
+    forced, _ = evaluate_forced_live(rig)
+    _, report = completed
+    simulated = {c["id"]: [k["status"] for k in c["components"]] for c in report["acceptance"]}
+    live_like = {cid: [k.status for k in c.components] for cid, c in forced.items()}
+    for statuses_by_id in (simulated, live_like):
+        for cid, statuses in statuses_by_id.items():
+            assert tuple(statuses) and len(statuses) == len(REQUIRED[cid])
+    for c in report["acceptance"]:
+        assert (c["status"] == "PASS") == all(k["status"] == "PASS" for k in c["components"]), c["id"]
+    for cid, criterion in forced.items():
+        assert (criterion.status == "PASS") == all(k.status == "PASS" for k in criterion.components), cid
+    for cid in ("A3", "A4", "A7", "A10", "A11", "A12"):  # each has a component that is deferred or test-verified only
+        assert forced[cid].status != "PASS", cid
+    assert any(k.status in {"DEFERRED", "NOT_EVALUABLE"} for k in forced["A12"].components)
+
+
+REQUIRED = __import__("app.ingestion.p0_report", fromlist=["REQUIRED_COMPONENTS"]).REQUIRED_COMPONENTS
+
+
+def test_overall_verdict_on_the_pipeline_output_reconciles_execution_acceptance_and_limitations(completed):
+    _, report = completed
+    verdict = report["verdict"]
+    assert verdict["pipeline_execution"]["status"] == "COMPLETED"
+    assert verdict["pipeline_execution"]["genuine_failures"] == []
+    assert [e["symbol"] for e in verdict["pipeline_execution"]["expected_unsupported"]] == ["TSM"]
+    assert verdict["acceptance_criteria"]["status"] == "INCOMPLETE" and verdict["overall"] == "INCOMPLETE"
+    assert verdict["p1_gate"] == "CLOSED" and verdict["p1_gate_reasons"]
+    assert sum(verdict["acceptance_criteria"]["counts"].values()) == 13
+    assert set(verdict["acceptance_criteria"]["counts"]) != {"PASS"}  # never "all PASS" with unevaluated components
+    ids = {x["id"] for x in verdict["known_coverage_limitations"]}
+    assert {"UNSUPPORTED_TAXONOMY:TSM", "NASDAQ_REVENUE_NOT_INGESTED", "TOTAL_ASSETS_NOT_IN_CONCEPT_SET"} <= ids
+    assert report["summary"]["companies_succeeded_all_stages"] == 13
+    assert (
+        report["summary"]["companies_expected_unsupported"] == 1
+        and report["summary"]["companies_failed_any_stage"] == 0
+    )
+
+
+def test_a_genuine_failure_in_the_sequence_fails_the_verdict(db_path, tmp_path):
+    rig = Rig(db_path, tmp_path)
+    rig.obb.fail[("cboe", "AMD")] = RuntimeError("down")
+    rig.obb.fail[("nasdaq", "AMD")] = RuntimeError("down")
+    report = run_p0_sequence(db_path, lambda run_id: rig.make(run_id))
+    verdict = report["verdict"]
+    assert verdict["pipeline_execution"]["status"] == "COMPLETED_WITH_FAILURES" and verdict["overall"] == "FAILED"
+    failures = verdict["pipeline_execution"]["genuine_failures"]
+    assert {f["symbol"] for f in failures} == {"AMD"} and {f["stage"] for f in failures} == {"prices", "quotes"}
+    assert (
+        report["summary"]["outcome_groups"]["failed"] == ["AMD"]
+        and report["summary"]["companies_failed_any_stage"] == 1
+    )
+
+
+# --- TSM / IFRS: an explicit unsupported taxonomy, not a failure and not zero ---------------------------------------
+
+
+def test_tsm_identity_prices_quotes_and_classification_load_but_no_facts_are_stored(completed):
+    rig, _ = completed
+    con = duckdb.connect(str(rig.db_path))
+    try:
+        cik = "0001046179"
+        assert con.execute("SELECT count(*) FROM financial_facts WHERE cik = ?", [cik]).fetchone() == (0,)
+        row = con.execute(
+            "SELECT cik, sector, sector_source, sic_source FROM securities WHERE ticker = 'TSM'"
+        ).fetchone()
+        assert row == (cik, "Technology", "nasdaq", "sec")  # two taxonomies, each with its own source
+        assert (
+            con.execute(
+                "SELECT count(*) FROM price_daily p JOIN securities s USING (security_id) WHERE s.ticker = 'TSM'"
+            ).fetchone()[0]
+            > 300
+        )
+        assert (
+            con.execute(
+                "SELECT count(*) FROM market_quotes q JOIN securities s USING (security_id) WHERE s.ticker = 'TSM'"
+            ).fetchone()[0]
+            == 1
+        )
+    finally:
+        con.close()
+    with access.reader(rig.db_path) as r:
+        assert r.fact_support_notes("0001046179") == ["UNSUPPORTED_TAXONOMY:ifrs-full"]  # WHY there are no facts
+        assert r.fact_support_notes("0000320193") == []
+
+
+def test_tsm_fundamentals_are_missing_input_with_the_reason_never_zero_and_prices_still_work(completed):
+    _, report = completed
+    tsm = report["metrics"]["0001046179"]
+    assert tsm["coverage"]["fundamentals"] == "UNAVAILABLE:UNSUPPORTED_TAXONOMY:ifrs-full"
+    for name, result in tsm["issuer_metrics"].items():
+        if name == "issuer_market_cap":
+            continue  # market data, not a fundamental
+        assert result["state"] == "MISSING_INPUT" and result["value"] is None, name
+        assert result["reason"] == "UNSUPPORTED_TAXONOMY:ifrs-full", name
+    assert tsm["lines"] == {"_fundamentals": {"value": None, "reason": "UNSUPPORTED_TAXONOMY:ifrs-full"}}
+    listing = tsm["listing_metrics"]["TSM"]
+    assert listing["price_to_earnings"]["state"] != "OK" and listing["price_to_earnings"]["value"] is None
+    assert listing["price_return_1y"]["state"] == "OK"  # price screens still work
+    assert tsm["issuer_metrics"]["issuer_market_cap"]["state"] == "OK"
+    check = tsm["cross_checks"]["market_cap_check"]
+    assert check["eligible"] is False and check["reason"] == "FACTS_UNAVAILABLE:UNSUPPORTED_TAXONOMY:ifrs-full"
+
+
+def test_the_rerun_treats_tsm_identically_and_stays_idempotent(completed):
+    _, report = completed
+    idem = report["idempotency"]
+    assert idem["expected_unsupported_run1"] == idem["expected_unsupported_run2"] == ["TSM"]
+    assert (idem["run1"]["issues"], idem["run2"]["issues"]) == (0, 0)
+    assert (idem["run2"]["inserted"], idem["run2"]["updated"]) == (0, 0)
+    assert report["second_run"]["stages"]["sec_facts"]["expected_unsupported"] == 1
+
+
+def test_a_document_with_us_gaap_is_never_classified_as_unsupported_and_empty_us_gaap_is_still_a_failure(rig):
+    doc = {"cik": syn.CIKS["KOSS"], "entityName": "X", "facts": {"us-gaap": {"SomethingUnlisted": {"units": {}}},
+                                                               "ifrs-full": {}}}  # fmt: skip
+    rig.sec.docs_overrides["companyfacts/CIK0000056701"] = doc
+    run = rig.run()
+    assert [(i.symbol, i.kind) for i in run.issues] == [("KOSS", "NO_ALLOWLISTED_FACTS")]  # genuine, not expected
+    assert run.expected_unsupported and [e["symbol"] for e in run.expected_unsupported] == ["TSM"]
+    assert run.outcomes["KOSS"].facts_status == "FAILED"
+
+
+# --- warning attribution ----------------------------------------------------------------------------------------
+
+
+def by(run, category, symbol):
+    return [w for w in run.warnings if w["category"] == category and w["symbol"] == symbol]
+
+
+def test_identical_duplicate_rows_are_attributed_to_ticker_provider_stage_and_dates(rig):
+    rig.obb.duplicate_rows.add("AAPL")
+    run = rig.run()
+    (w,) = by(run, "DUPLICATE_PROVIDER_ROWS", "AAPL")
+    assert (w["provider"], w["stage"]) == ("cboe", "prices")
+    assert w["details"]["duplicates"] == 3 and w["details"]["conflicting"] == 0 and len(w["details"]["dates"]) == 3
+    assert w["details"]["command"] == "obb.cboe.equity.historical" and w["details"]["sent_symbol"] == "AAPL"
+    assert "all identical" in w["message"]
+    con = duckdb.connect(str(rig.db_path))
+    try:  # the de-duplication itself is unchanged: one stored row per date
+        assert con.execute(
+            "SELECT max(n) FROM (SELECT count(*) n FROM price_daily GROUP BY security_id, trade_date)"
+        ).fetchone() == (1,)
+    finally:
+        con.close()
+
+
+def test_duplicates_with_different_values_get_their_own_category(rig):
+    rig.obb.conflicting_duplicates.add("COST")
+    run = rig.run()
+    assert not by(run, "DUPLICATE_PROVIDER_ROWS", "COST")
+    (w,) = by(run, "CONFLICTING_DUPLICATE_PROVIDER_ROWS", "COST")
+    assert w["details"]["conflicting"] == 1 and w["details"]["samples"][0]["identical"] is False
+    assert "DIFFERENT values" in w["message"]
+
+
+def test_rejected_price_rows_name_the_row_the_reason_and_the_provider(rig):
+    rig.obb.bad_rows.add("NVDA")
+    run = rig.run()
+    (w,) = by(run, "REJECTED_PRICE_ROWS", "NVDA")
+    assert w["provider"] == "cboe" and w["details"]["reason"] == "HIGH_BELOW_LOW"
+    assert w["details"]["rows"][0]["date"] == "2025-01-02" and w["stage"] == "prices"
+
+
+def test_a_missing_nasdaq_classification_is_attributed_and_stores_nothing_invented(rig):
+    rig.obb.no_classification.add("META")
+    run = rig.run()
+    (w,) = by(run, "NO_NASDAQ_CLASSIFICATION", "META")
+    assert (w["provider"], w["stage"]) == ("nasdaq", "quotes")
+    assert w["details"]["raw_sector"] is None and w["details"]["raw_industry"] is None
+    con = duckdb.connect(str(rig.db_path))
+    try:
+        assert con.execute(
+            "SELECT sector, industry, sector_source FROM securities WHERE ticker = 'META'"
+        ).fetchone() == (
+            None,
+            None,
+            None,
+        )
+    finally:
+        con.close()
+
+
+def test_warnings_from_the_fallback_provider_say_so(rig):
+    rig.obb.fail[("cboe", "KOSS")] = RuntimeError("cboe empty")
+    rig.obb.duplicate_rows.add("KOSS")
+    run = rig.run()
+    (w,) = by(run, "DUPLICATE_PROVIDER_ROWS", "KOSS")
+    assert w["provider"] == "nasdaq" and w["details"]["is_fallback"] is True
+
+
+def test_python_warnings_raised_inside_openbb_are_captured_and_attributed(rig):
+    rig.obb.warn_on[("cboe", "historical")] = "endpoint is deprecated"
+    run = rig.run()
+    captured = [w for w in run.warnings if w["category"] == "OPENBB_WARNING"]
+    assert {w["symbol"] for w in captured} >= {"AAPL", "KOSS", "TSM"} and len(captured) >= 13
+    sample = next(w for w in captured if w["symbol"] == "AAPL")
+    assert (
+        sample["provider"] == "cboe" and sample["stage"] == "prices" and sample["message"] == "endpoint is deprecated"
+    )
+    assert sample["details"]["warning_class"] == "UserWarning" and sample["details"]["command"].startswith("obb.cboe")
+
+
+def test_every_warning_is_attributable_and_an_unattributed_one_fails_the_criterion(rig):
+    rig.obb.duplicate_rows.add("AAPL")
+    rig.obb.no_classification.add("META")
+    rig.obb.warn_on[("cboe", "historical")] = "w"
+    criteria, run = evaluate_forced_live(rig)
+    parts = comps(criteria["A9"])
+    assert parts["warnings_attributable"].status == "PASS" and parts["warnings_categorised"].status == "PASS"
+    assert all(w["symbol"] and w["provider"] and w["stage"] for w in run.warnings)
+
+    def inject(first):
+        first.warnings.append({"category": "MYSTERY", "symbol": None, "provider": None, "stage": None, "message": "?"})
+
+    criteria, _ = evaluate_forced_live(rig, mutate_first=inject)
+    parts = comps(criteria["A9"])
+    assert parts["warnings_attributable"].status == "FAIL" and parts["warnings_categorised"].status == "FAIL"
+    assert criteria["A9"].status == "FAIL"
+
+
+def test_the_markdown_report_shows_the_verdict_the_components_and_the_attributed_warnings(completed):
+    from app.ingestion.p0_report import render_markdown
+
+    _, report = completed
+    text = render_markdown(report)
+    assert "**Overall: INCOMPLETE**" in text and "Pipeline execution: COMPLETED" in text
+    assert "Expected unsupported coverage (not failures)" in text and "TSM" in text and "UNSUPPORTED_TAXONOMY" in text
+    assert "`revenue_vs_nasdaq` **DEFERRED**" in text and "Provider warnings (attributed)" in text
+    assert "UNSUPPORTED_TAXONOMY:TSM" in text and "NASDAQ_REVENUE_NOT_INGESTED" in text

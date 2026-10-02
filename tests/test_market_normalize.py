@@ -77,3 +77,13 @@ def test_quote_uses_the_providers_date_and_keeps_raw_classification_text():
 def test_non_finite_quote_numbers_become_none():
     parsed = parse_quote(1, {"last_timestamp": "2026-10-01", "market_cap": float("inf"), "last_price": "n/a"})
     assert parsed.record.market_cap is None and parsed.record.last_price is None
+
+
+def test_duplicate_details_say_whether_the_repeated_rows_were_identical_or_conflicting():
+    same = parse_prices(1, [bar("2026-01-02", 5.0), bar("2026-01-02", 5.0)])
+    assert same.duplicates == 1 and same.duplicate_details == [
+        {"date": "2026-01-02", "identical": True, "kept_close": 5.0, "dropped_close": 5.0}
+    ]
+    differ = parse_prices(1, [bar("2026-01-02", 5.0), bar("2026-01-02", 6.0), bar("2026-01-05", 7.0)])
+    assert differ.duplicates == 1 and differ.records[0].close == 6.0  # last wins, unchanged behaviour
+    assert differ.duplicate_details[0]["identical"] is False and differ.duplicate_details[0]["dropped_close"] == 5.0

@@ -7,6 +7,7 @@
 
 import json
 import random
+import warnings
 from datetime import date, timedelta
 
 import httpx
@@ -14,6 +15,8 @@ import p0_synthetic as syn
 
 from app.models.symbols import canonical_symbol
 
+# single-class issuers get the same count as the synthetic dei cover-page value, so the A12 market-cap check is exact
+DEFAULT_SHARES = 14.6e9
 SHARES = {"AAPL": 14.6e9, "GOOGL": 12.1e9, "GOOG": 12.1e9, "BRK-B": 2.2e9}
 
 
@@ -34,11 +37,18 @@ class FakeSec:
     def facts_doc(self, symbol: str) -> dict:
         cik = syn.CIKS[symbol]
         if symbol == "TSM":  # foreign private issuer: IFRS, nothing under us-gaap
-            return {
+            ifrs_point = {"accn": "0000000000-26-000001", "fy": 2025, "fp": "FY", "form": "20-F", "filed": "2026-03-01"}
+            return {  # the live taxonomies were ['dei', 'ifrs-full', 'srt']; every number here is invented
                 "cik": cik,
                 "entityName": "SYNTHETIC TSM",
-                "facts": {"ifrs-full": {"Revenue": {"units": {"TWD": []}}}},
-            }
+                "facts": {
+                    "dei": {"EntityCommonStockSharesOutstanding": {"units": {"shares": [
+                        {**ifrs_point, "end": "2026-02-28", "val": 5.2e9}]}}},
+                    "ifrs-full": {"Revenue": {"units": {"TWD": [
+                        {**ifrs_point, "start": "2025-01-01", "end": "2025-12-31", "val": 1.0e12}]}}},
+                    "srt": {},
+                },
+            }  # fmt: skip
         if symbol == "JPM":  # bank: no gross profit / operating income / capex lines
             return syn.standard_issuer(cik, gross_profit=False, capex=False, debt_lines=())
         if symbol == "BRK-B":  # no debt lines and no EPS
@@ -116,6 +126,10 @@ class FakeObb:
         self.duplicate_rows: set[str] = set()
         self.bad_rows: set[str] = set()
         self.drop_quote_for: set[str] = set()
+        self.conflicting_duplicates: set[str] = set()
+        self.no_classification: set[str] = set()
+        self.warn_on: dict[tuple[str, str], str] = {}  # (provider, command) -> Python warning text to emit
+        self.cap_scale: dict[str, float] = {}  # symbol -> factor applied to the quoted market cap
         self.cboe = _Namespace(equity=_Namespace(historical=self._historical("cboe")))
         self.nasdaq = _Namespace(equity=_Namespace(historical=self._historical("nasdaq"), quote=self._quote))
 
@@ -127,11 +141,16 @@ class FakeObb:
         rng = random.Random(symbol)
         price = 20 + rng.random() * 200
         rows = []
-        for day in business_days(max(start, date(2020, 1, 2)), end):
+        # one fixed series from 2020 per symbol, sliced by date, so history and quote agree whatever window is asked for
+        for day in business_days(date(2020, 1, 2), max(end, self.as_of)):
             price *= 1 + rng.uniform(-0.02, 0.0215)
             high, low = price * 1.01, price * 0.99
-            rows.append({"date": day.isoformat(), "open": round(price, 2), "high": round(high, 2), "low": round(low, 2),
-                         "close": round(price, 2), "volume": int(1e6 * (1 + rng.random()))})  # fmt: skip
+            if start <= day <= end:
+                rows.append({"date": day.isoformat(), "open": round(price, 2), "high": round(high, 2),
+                             "low": round(low, 2), "close": round(price, 2),
+                             "volume": int(1e6 * (1 + rng.random()))})  # fmt: skip
+            else:
+                rng.random()  # keep the random stream aligned with the volume draw
         return rows
 
     def _historical(self, provider: str):
@@ -142,11 +161,15 @@ class FakeObb:
             if (provider, symbol) in self.fail:
                 raise self.fail[(provider, symbol)]
             canonical = self._symbol(symbol)
+            if (provider, "historical") in self.warn_on:
+                warnings.warn(self.warn_on[(provider, "historical")], UserWarning, stacklevel=2)
             start = date.fromisoformat(start_date) if start_date else date(2020, 1, 2)
             end = date.fromisoformat(end_date) if end_date else self.as_of
             rows = self._bars(canonical, start, end)
             if canonical in self.duplicate_rows:
                 rows = rows + rows[-3:]
+            if canonical in self.conflicting_duplicates:
+                rows = rows + [{**rows[-1], "close": rows[-1]["close"], "volume": rows[-1]["volume"] + 1}]
             if canonical in self.bad_rows:
                 rows = rows + [{"date": "2025-01-02", "open": 5, "high": 4, "low": 6, "close": 5, "volume": 1}]
             return _Result([_Row(**r) for r in rows])
@@ -161,12 +184,13 @@ class FakeObb:
         bars = self._bars(canonical, self.as_of - timedelta(days=400), self.as_of)
         last = bars[-1]["close"]
         year = [b for b in bars if b["date"] >= (self.as_of - timedelta(days=365)).isoformat()]
-        shares = SHARES.get(canonical, 2.0e9)
+        shares = SHARES.get(canonical, DEFAULT_SHARES)
         return _Result([
-            _Row(symbol=symbol, last_price=last, market_cap=last * shares,
+            _Row(symbol=symbol, last_price=last, market_cap=last * shares * self.cap_scale.get(canonical, 1.0),
                  year_high=max(b["high"] for b in year), year_low=min(b["low"] for b in year),
-                 last_timestamp=date.fromisoformat(bars[-1]["date"]), sector="Technology",
-                 industry="Computer Manufacturing",
+                 last_timestamp=date.fromisoformat(bars[-1]["date"]),
+                 sector=None if canonical in self.no_classification else "Technology",
+                 industry=None if canonical in self.no_classification else "Computer Manufacturing",
                  exchange="NASDAQ-GS")
         ])  # fmt: skip
 

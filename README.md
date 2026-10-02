@@ -240,7 +240,7 @@ set SEC_USER_AGENT=MyResearchTerminal you@your-domain.example
 
 Applies the schema migration, ingests the 14 pinned P0 securities into a separate database (`data/p0_pilot.duckdb`), validates it, runs **the same
 ingestion again**, checks idempotency and writes `data/p0_reports/p0_report_<time>.json` and `.md` (measurements and a PASS / FAIL / NOT_EVALUATED table
-against the Phase 2 criteria A1-A13). Without `SEC_USER_AGENT` it makes no request and says so (exit code 3). `python tests/p0_rehearsal.py` runs the
+against the Phase 2 criteria A1-A13). Without `SEC_USER_AGENT` it makes no request and says so (exit code 3). The report separates *pipeline execution*, *acceptance criteria* (PASS only when every required component passed; otherwise PARTIAL / DEFERRED / NOT_EVALUABLE / FAIL) and *known coverage limitations* (e.g. TSM's IFRS taxonomy is an expected gap, not a failure). Exit codes: 0 accepted, 1 failed, 4 incomplete. `python tests/p0_rehearsal.py` runs the
 same sequence on **simulated** providers (mechanics only, stamped SIMULATED). The P0 set is listed in `app/ingestion/manifest.py` and documented in
 `docs/data_coverage.md` section 13. P1 (about 300 securities) is not built and is gated on a passing live P0 report.
 

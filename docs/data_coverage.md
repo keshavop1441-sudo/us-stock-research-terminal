@@ -219,10 +219,48 @@ requested are marked live-probed in the YAML (`p0_pilot.tag_selection`). The oth
 per-share sum needed a split guard the audit did not specify (NVDA's FY2024 EPS vintage trap makes a naive FY + YTD - YTD EPS wrong by the split ratio);
 the guard is documented in the YAML and tested. (3) `net_income` means `NetIncomeLoss` only; the dictionary's earlier `ProfitLoss` fallback is gone.
 
-**What has and has not been run.** The development sandbox cannot reach SEC, Nasdaq or Cboe and has no `SEC_USER_AGENT`, so **no live P0 run exists from
-there**: the hermetic tests and the offline rehearsal (`python tests/p0_rehearsal.py`) use simulated providers and prove mechanics only. A live run needs
-`SEC_USER_AGENT` and `python scripts/run_p0.py` (or the manual GitHub workflow `p0-ingestion.yml`). Its report compares the measurements with A1-A13 and
-marks every criterion it could not measure `NOT_EVALUATED`. P1 is gated on a passing live report.
+**What has and has not been run.** The development sandbox cannot reach SEC, Nasdaq or Cboe and has no `SEC_USER_AGENT`, so the hermetic tests and the
+offline rehearsal (`python tests/p0_rehearsal.py`) use simulated providers and prove mechanics only. The **first live run** (workflow run `36965720655`,
+`main` at `d37dafd`, figures as reported by the operator): 14 securities, 13 issuers, identity, CIK mapping, prices and quotes 14/14, SEC facts 12/13, 27 SEC
+requests at a peak of 8/s, no 403/429, no retries, 45,878 rows inserted and 0 inserted / 0 updated / 45,878 unchanged on the identical second run.
+
+### 13.1 Accounting taxonomies: US-GAAP supported, IFRS an explicit expected gap
+
+P0 ingests `us-gaap` (plus `dei` cover-page counts for single-class issuers). **TSM** (an NYSE-listed ADR of a foreign private issuer; live companyfacts
+taxonomies `['dei', 'ifrs-full', 'srt']`, reported in TWD) is classified **`UNSUPPORTED_TAXONOMY`**, not an ingestion failure:
+
+* **Why IFRS is not implemented now:** no live evidence of the tags such an issuer uses, so any mapping onto the canonical lines would be invented; its currency is
+  not USD while `issuer_market_cap` is, so every USD comparison would need currency handling that is neither designed nor verified; ADS ratios make share counts unreliable.
+* **How it is represented:** no fact is stored; the companyfacts retrieval records the note `UNSUPPORTED_TAXONOMY:ifrs-full`
+  (`ReadRepository.fact_support_notes`); the stage reports it as *expected unsupported* (`failed` stays 0); the report lists it under known coverage limitations.
+* **What still works for it:** identity, CIK, prices, quotes, raw Nasdaq/SIC classification and price metrics (returns, drawdown).
+* **What cannot work:** every fundamental metric is `MISSING_INPUT` with reason `UNSUPPORTED_TAXONOMY:ifrs-full` (never 0, never a percentage), so TSM cannot take part
+  in any screen that needs accounting facts. It is excluded from the A12 market-cap cross-check (`FACTS_UNAVAILABLE`).
+* Still genuine failures: `us-gaap` present but none of the allow-listed concepts (`NO_ALLOWLISTED_FACTS`), malformed documents, HTTP failures, a missing CIK.
+* A scoped IFRS path (validated tag mapping, currency-aware metrics, fixtures) is a later task and would replace this classification for the issuers it covers.
+
+### 13.2 Acceptance statuses
+
+A criterion is the sum of its **required components** (`app/ingestion/acceptance.py`, component lists pinned in `REQUIRED_COMPONENTS`). Component statuses: `PASS`,
+`FAIL`, `NOT_EVALUABLE` (could not be measured in this run), `DEFERRED` (needs data that is intentionally not ingested), `EXPECTED_UNSUPPORTED`. Criterion status is
+derived: **FAIL** if any component failed; **PASS** only if every required component passed; **PARTIAL** if some passed and others were not evaluated;
+**DEFERRED / NOT_EVALUABLE** if nothing passed; **EXPECTED_UNSUPPORTED** if every component is. An unevaluated component can never be a PASS.
+
+The report states three things separately: *pipeline execution* (COMPLETED / COMPLETED_WITH_FAILURES / ABORTED / DID_NOT_RUN), *acceptance criteria* (ACCEPTED /
+INCOMPLETE / FAILED / NOT_RUN) and *known coverage limitations*. The overall verdict is ACCEPTED only with a clean execution and every criterion PASS; the P1 gate
+opens only then. `scripts/run_p0.py` exits 0 / 1 / 4 for ACCEPTED / FAILED / INCOMPLETE.
+
+**What A12 can and cannot measure today:** it measures the 52-week high against Nasdaq's published `year_high` (14 listings) and `issuer_market_cap` against last close x dei
+shares for the *eligible* issuers (single-class, reliable dei shares, market cap present, facts available), reporting numerator, denominator, percentage and every
+exclusion with its reason (multi-class Alphabet and Berkshire, TSM). It cannot measure the SEC-vs-Nasdaq revenue clause because Nasdaq statements are not ingested: that
+component is `DEFERRED` and A12 is at best `PARTIAL`. Other deferred components: A3 split-detection on a real split, A4 total assets, A7/A10 full-universe projection, and the
+A11 clauses that only the hermetic tests exercise.
+
+### 13.3 Provider warnings
+
+Every warning carries category, ticker, provider, stage, command and row-level details. Duplicate provider rows are split into `DUPLICATE_PROVIDER_ROWS` (all repeats identical)
+and `CONFLICTING_DUPLICATE_PROVIDER_ROWS` (different values: the last row is kept, as before, and the conflict is surfaced); rejected rows list the reason and sample rows; Python warnings
+raised inside OpenBB calls are captured as `OPENBB_WARNING`. The five warnings of the first live run could not be attributed from its report; the next live run will.
 
 ## 11. Metric table (generated)
 

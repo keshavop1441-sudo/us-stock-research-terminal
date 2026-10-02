@@ -146,3 +146,33 @@ def test_companyfacts_for_another_cik_is_rejected():
         parse_companyfacts({"cik": 1, "facts": {}}, AAPL)
     with pytest.raises(MalformedResponseError, match="no 'facts'"):
         parse_companyfacts({"cik": 320193}, AAPL)
+
+
+def test_an_ifrs_only_document_is_an_unsupported_taxonomy_and_nothing_is_stored_or_mapped():
+    """TSM's live taxonomies were ['dei', 'ifrs-full', 'srt']; the numbers here are invented."""
+    point = {"accn": "0000000000-26-000001", "fy": 2025, "fp": "FY", "form": "20-F", "filed": "2026-03-01"}
+    shares = [{**point, "end": "2026-02-28", "val": 5.2e9}]
+    revenue = [{**point, "start": "2025-01-01", "end": "2025-12-31", "val": 1.0}]
+    doc = {
+        "cik": 1046179,
+        "facts": {
+            "dei": {"EntityCommonStockSharesOutstanding": {"units": {"shares": shares}}},
+            "ifrs-full": {"Revenue": {"units": {"TWD": revenue}}},
+            "srt": {},
+        },
+    }
+    parsed = parse_companyfacts(doc, "0001046179")
+    assert parsed.unsupported_taxonomy == "ifrs-full" and parsed.points == [] and parsed.rejects == []
+    assert parsed.taxonomies == ("dei", "ifrs-full", "srt")  # the dei cover-page count is NOT kept for a foreign issuer
+
+
+def test_ifrs_next_to_us_gaap_is_not_unsupported_and_us_gaap_facts_are_ingested():
+    doc = syn.standard_issuer(q1=False)
+    doc["facts"]["ifrs-full"] = {}
+    parsed = parse_companyfacts(doc, AAPL)
+    assert parsed.unsupported_taxonomy is None and parsed.points
+
+
+def test_documents_without_any_ifrs_are_never_flagged_unsupported():
+    assert parse_companyfacts({"cik": 320193, "facts": {}}, AAPL).unsupported_taxonomy is None
+    assert parse_companyfacts({"cik": 320193, "facts": {"us-gaap": {}}}, AAPL).unsupported_taxonomy is None

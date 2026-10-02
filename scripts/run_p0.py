@@ -10,7 +10,8 @@ P1/P2.
 start, no request is made, and the report says so: no placeholder contact is ever substituted. The pilot database is a
 separate file so it can be discarded; raw provider payloads are kept beside it for audit.
 
-Exit codes: 0 completed, 1 completed with failures recorded, 2 database busy, 3 SEC_USER_AGENT missing/invalid.
+Exit codes: 0 overall ACCEPTED, 1 FAILED (a genuine failure or a failed criterion), 2 database busy, 3 SEC_USER_AGENT
+missing/invalid, 4 INCOMPLETE (ran cleanly, but some criterion is PARTIAL / DEFERRED / NOT_EVALUABLE).
 """
 
 import argparse
@@ -32,7 +33,7 @@ from app.ingestion.sec_http import SecHttpClient  # noqa: E402
 from app.ingestion.stats import RequestStats  # noqa: E402
 from app.services.ingestion_service import P0Run, run_p0_sequence  # noqa: E402
 
-EXIT_BUSY, EXIT_NO_USER_AGENT = 2, 3
+EXIT_BUSY, EXIT_NO_USER_AGENT, EXIT_INCOMPLETE = 2, 3, 4
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -70,12 +71,25 @@ def main(argv: list[str] | None = None) -> int:
     md_path.parent.mkdir(parents=True, exist_ok=True)
     md_path.write_text(render_markdown(report), encoding="utf-8")
     print(f"Report: {md_path}")
+    verdict = report["verdict"]  # type: ignore[index]
+    print(f"Overall: {verdict['overall']} | pipeline: {verdict['pipeline_execution']['status']} | "
+          f"criteria: {verdict['acceptance_criteria']['counts']} | P1 gate: {verdict['p1_gate']}")  # fmt: skip
+    for item in verdict["acceptance_criteria"]["not_passed"]:
+        print(f"  not PASS: {item['id']} = {item['status']}")
+    for w in report.get("warnings", []):  # type: ignore[attr-defined]
+        print(f"  warning {w['category']} {w.get('symbol')} [{w.get('provider')}/{w.get('stage')}]: {w['message']}")
+    for e in report.get("expected_unsupported", []):  # type: ignore[attr-defined]
+        print(f"  expected unsupported {e['symbol']} ({e['kind']}): {e['message']}")
+    for i in report["issues"]:  # type: ignore[index]
+        print(f"  FAILURE {i['stage']} {i['symbol']} {i['kind']}: {i['message']}")
     fatal = report["summary"].get("fatal")  # type: ignore[union-attr]
     if fatal == "SEC_USER_AGENT_MISSING":
         return EXIT_NO_USER_AGENT
     if fatal == "DATABASE_LOCKED":
         return EXIT_BUSY
-    return 1 if (fatal or report["issues"]) else 0
+    if verdict["overall"] == "ACCEPTED":
+        return 0
+    return EXIT_INCOMPLETE if verdict["overall"] == "INCOMPLETE" else 1
 
 
 if __name__ == "__main__":

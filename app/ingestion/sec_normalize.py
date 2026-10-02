@@ -17,7 +17,14 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from app.ingestion.errors import IdentityError, MalformedResponseError
-from app.models.concepts import ACCOUNTING_FORMS, INDEXED_FORMS, SPEC_BY_LINE, SPEC_BY_TAG
+from app.models.concepts import (
+    ACCOUNTING_FORMS,
+    INDEXED_FORMS,
+    KNOWN_UNSUPPORTED_ACCOUNTING_TAXONOMIES,
+    SPEC_BY_LINE,
+    SPEC_BY_TAG,
+    SUPPORTED_ACCOUNTING_TAXONOMIES,
+)
 from app.models.identifiers import InvalidCikError, normalize_cik
 from app.models.periods import parse_fiscal_year_end
 from app.models.records import FilingRecord
@@ -135,6 +142,8 @@ class FactsParse:
     entity_name: str | None = None
     taxonomies: tuple[str, ...] = ()
     lines_present: frozenset[str] = frozenset()
+    # set when the document has an unsupported accounting taxonomy and NO supported one: nothing is stored then
+    unsupported_taxonomy: str | None = None
 
 
 def parse_companyfacts(payload: dict, cik: str) -> FactsParse:
@@ -148,6 +157,12 @@ def parse_companyfacts(payload: dict, cik: str) -> FactsParse:
     if not isinstance(facts, dict):
         raise MalformedResponseError("companyfacts: no 'facts' object")
     result = FactsParse(entity_name=payload.get("entityName"), taxonomies=tuple(sorted(facts)))
+    unsupported = sorted(set(facts) & KNOWN_UNSUPPORTED_ACCOUNTING_TAXONOMIES)
+    if unsupported and not set(facts) & SUPPORTED_ACCOUNTING_TAXONOMIES:
+        # e.g. TSM: taxonomies ['dei', 'ifrs-full', 'srt']. Not a failure and not mapped: dei cover-page counts of a
+        # foreign issuer (ordinary shares vs ADS) are not reliable on their own either, so nothing is kept.
+        result.unsupported_taxonomy = unsupported[0]
+        return result
     seen: set[tuple] = set()
     for (taxonomy, tag), spec in sorted(SPEC_BY_TAG.items()):
         concept = (facts.get(taxonomy) or {}).get(tag)

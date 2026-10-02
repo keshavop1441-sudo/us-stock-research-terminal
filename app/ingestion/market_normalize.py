@@ -47,6 +47,8 @@ class PriceParse:
     records: list[PriceRecord] = field(default_factory=list)
     rejects: list[dict[str, object]] = field(default_factory=list)
     duplicates: int = 0  # the provider repeated a trade date (identical or not): last one wins, counted
+    # one entry per repeated date: {"date": iso, "identical": bool, "kept_close": x, "dropped_close": y}
+    duplicate_details: list[dict[str, object]] = field(default_factory=list)
     gaps: list[tuple[date, date, int]] = field(default_factory=list)  # (last bar, next bar, business days between)
     first: date | None = None
     last: date | None = None
@@ -83,6 +85,16 @@ def parse_prices(security_id: int, rows: list[dict], source_id: int | None = Non
             continue
         if day in by_date:
             result.duplicates += 1
+            previous = by_date[day]
+            result.duplicate_details.append(
+                {
+                    "date": day.isoformat(),
+                    "identical": (previous.open, previous.high, previous.low, previous.close, previous.volume)
+                    == (o, h, lo, c, int(volume) if volume is not None else None),
+                    "kept_close": c,
+                    "dropped_close": previous.close,
+                }
+            )
         by_date[day] = PriceRecord(
             security_id=security_id,
             trade_date=day,

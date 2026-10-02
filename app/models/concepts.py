@@ -95,6 +95,13 @@ SPECS: tuple[ConceptSpec, ...] = (
     ),  # fmt: skip
 )
 
+# Accounting taxonomies the P0 concept set is defined for. An issuer whose companyfacts carry ONLY an unsupported
+# accounting taxonomy (e.g. a foreign private issuer reporting under IFRS in a non-USD currency) is a deliberate,
+# documented coverage gap: no fact is stored, no mapping to us-gaap is invented, and its fundamentals are
+# MISSING_INPUT with the reason UNSUPPORTED_TAXONOMY:<taxonomy> (never 0). See docs/data_coverage.md section 13.
+SUPPORTED_ACCOUNTING_TAXONOMIES = frozenset({US_GAAP})
+KNOWN_UNSUPPORTED_ACCOUNTING_TAXONOMIES = frozenset({"ifrs-full"})
+
 SPEC_BY_LINE = {spec.line: spec for spec in SPECS}
 # (taxonomy, tag) -> spec: what an ingested companyfacts point must match to be stored.
 SPEC_BY_TAG = {(spec.taxonomy, tag): spec for spec in SPECS for tag in spec.tags}

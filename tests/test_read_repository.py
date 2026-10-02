@@ -82,7 +82,7 @@ def test_read_repository_exposes_only_named_read_methods():
     assert public == {
         "schema_version", "table_counts", "last_sync", "recent_queries", "find_securities_by_ticker",
         "find_securities_by_cik", "price_history", "list_watchlists",
-        "market_quotes", "securities_of_issuers", "financial_facts", "filings",  # v3 (Phase 3A) named reads
+        "market_quotes", "securities_of_issuers", "financial_facts", "filings", "fact_support_notes",  # v3 named reads
     }  # fmt: skip
     assert not public & RAW_ACCESS_NAMES
 
