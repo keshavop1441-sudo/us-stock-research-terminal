@@ -160,12 +160,18 @@ def total_debt(
     balance_sheet_present: bool,
     explicit_no_debt_evidence: bool = False,
 ) -> MetricResult:
-    """Financial debt = short-term borrowings + current portion of long-term debt + long-term debt (+ finance leases).
+    """Financial debt = current portion of long-term debt + long-term debt (+ short-term debt when separately reported
+    + finance leases).
 
     Operating-lease liabilities are excluded (use a separate, explicitly named metric if wanted).
 
+    The two long-term lines are the CORE components. ``short_term_debt`` (a separately reported instrument such as
+    commercial paper or short-term borrowings) is OPTIONAL: many issuers' current debt is entirely the current portion
+    of long-term debt, so its absence is not a gap. It is never derived from ``LongTermDebtCurrent`` (no double count);
+    when absent the result carries SHORT_TERM_DEBT_NOT_REPORTED.
+
     ZERO IS NEVER INFERRED FROM ABSENCE. Debt is 0 only when
-      * every one of the three core components is explicitly reported (a reported 0 is a value), or
+      * both core components are explicitly reported (a reported 0 is a value), or
       * the caller passes ``explicit_no_debt_evidence=True`` because the filing itself says the company has no debt
         (e.g. an explicit tag/disclosure) and no component contradicts that.
     Otherwise, if any core component is absent, the result is MISSING_INPUT: a sum of the reported components would be
@@ -174,18 +180,21 @@ def total_debt(
     and the result carries FINANCE_LEASES_NOT_REPORTED.
     """
     core = {
-        "short_term_debt": _num(short_term_debt),
         "current_portion_long_term_debt": _num(current_portion_long_term_debt),
         "long_term_debt": _num(long_term_debt),
     }
     leases = _num(finance_lease_liabilities)
+    short = _num(short_term_debt)
     reported = {k: v for k, v in core.items() if v is not None}
-    if any(v < 0 for v in [*reported.values(), *([leases] if leases is not None else [])]):
+    optional = [v for v in (short, leases) if v is not None]
+    if any(v < 0 for v in [*reported.values(), *optional]):
         return _no(MetricState.NOT_MEANINGFUL, "NEGATIVE_DEBT_COMPONENT")
     if not balance_sheet_present:
         return _no(MetricState.MISSING_INPUT, "NO_BALANCE_SHEET")
-    total = sum(reported.values()) + (leases or 0.0)
-    flags = () if leases is not None else ("FINANCE_LEASES_NOT_REPORTED",)
+    total = sum(reported.values()) + (short or 0.0) + (leases or 0.0)
+    flags = (() if short is not None else ("SHORT_TERM_DEBT_NOT_REPORTED",)) + (
+        () if leases is not None else ("FINANCE_LEASES_NOT_REPORTED",)
+    )
     if explicit_no_debt_evidence:
         if total > 0:
             return _no(MetricState.NOT_MEANINGFUL, "CONTRADICTORY_NO_DEBT_EVIDENCE")

@@ -320,7 +320,8 @@ _DEBT_LINES = ("short_term_debt", "current_portion_long_term_debt", "long_term_d
 def _leverage_change(index: StatementIndex, fy_end: date) -> dict[str, MetricResult]:
     """Debt/equity at the fiscal-year end and one year earlier, BOTH read from the single filing (the annual report
     that carries the fiscal year's revenue pair) so the two balance sheets are on one vintage. Debt follows the usual
-    rule: absent components are never zero (``total_debt`` is MISSING_INPUT unless all core lines are reported)."""
+    rule: absent components are never zero (``total_debt`` is MISSING_INPUT unless both long-term lines are
+    reported; short-term debt is optional)."""
     revenue = index.annual_pair("revenue", fy_end)
     if revenue is None:
         gone = _missing("NO_FILING_REPORTS_BOTH_YEARS")

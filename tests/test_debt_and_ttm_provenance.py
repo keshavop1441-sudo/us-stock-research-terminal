@@ -97,25 +97,49 @@ def test_explicit_zero_short_term_borrowings_is_a_value_and_counts():
     assert all(out[name].state is MetricState.OK for name in DEBT_METRICS)
 
 
-def test_filer_reporting_no_short_term_debt_concept_stays_unavailable_never_zero():
-    out, _, _ = run()
-    assert out["total_debt"].state is MetricState.MISSING_INPUT
-    assert out["total_debt"].reason == "DEBT_COMPONENT_ABSENT:short_term_debt"
-    for name in DEBT_METRICS:
-        assert out[name].state is MetricState.MISSING_INPUT and out[name].value is None, name
+def test_filer_reporting_no_short_term_debt_concept_is_debt_from_the_long_term_lines_only():
+    """MSFT/NVDA shape: short-term debt is optional. Latest sheet 2025-12-27: current LTD 9 + LTD 88, no tag added."""
+    out, lines, _ = run()
+    assert out["total_debt"].ok and out["total_debt"].value == pytest.approx(97e9)  # current portion counted ONCE
+    assert "SHORT_TERM_DEBT_NOT_REPORTED" in out["total_debt"].flags
+    assert all(out[name].state is MetricState.OK for name in DEBT_METRICS)
+    assert lines["short_term_debt"] == {"value": None, "reason": "NOT_REPORTED"}  # provenance stays NOT_REPORTED
+    assert lines["current_portion_long_term_debt"]["tag"] == "LongTermDebtCurrent"
+    assert lines["current_portion_long_term_debt"]["value"] == 9e9
+    assert lines["long_term_debt"]["tag"] == "LongTermDebtNoncurrent"
+
+
+def test_missing_long_term_components_still_block_total_debt():
+    for dropped, reason in (
+        ("current_portion_long_term_debt", "DEBT_COMPONENT_ABSENT:current_portion_long_term_debt"),
+        ("long_term_debt", "DEBT_COMPONENT_ABSENT:long_term_debt"),
+    ):
+        keep = tuple(x for x in NO_SHORT_TERM if x != dropped)
+        out, _, _ = run(commercial_paper(), debt_lines=keep)  # a reported CP does not stand in for a core line
+        assert out["total_debt"].state is MetricState.MISSING_INPUT and out["total_debt"].reason == reason
+        for name in ("net_debt", "debt_to_equity"):
+            assert out[name].state is MetricState.MISSING_INPUT and out[name].value is None, name
+
+
+def test_no_new_short_term_debt_tag_is_mapped():
+    assert SPEC_BY_LINE["short_term_debt"].tags == ("ShortTermBorrowings", "CommercialPaper")
+    assert SPEC_BY_LINE["current_portion_long_term_debt"].tags == ("LongTermDebtCurrent",)
+    assert SPEC_BY_LINE["long_term_debt"].tags == ("LongTermDebtNoncurrent",)
 
 
 def test_debt_current_alone_is_not_taken_as_short_term_debt():
     extra = (instant("DebtCurrent", Q1, 15e9, KQ, D(2026, 1, 30), "10-Q"),)
-    out, _, _ = run(extra)
-    assert out["total_debt"].reason == "DEBT_COMPONENT_ABSENT:short_term_debt"
+    out, lines, _ = run(extra)
+    assert out["total_debt"].value == pytest.approx(97e9)  # DebtCurrent (15e9) is neither added nor substituted
+    assert lines["short_term_debt"]["reason"] == "NOT_REPORTED"
 
 
 def test_commercial_paper_from_another_date_is_not_carried_onto_the_balance_sheet_date():
     """Period alignment: CP only at the fiscal year ends does not fill the (later) latest balance sheet date."""
     extra = commercial_paper()[1:]
     out, _, _ = run(extra)
-    assert out["total_debt"].reason == "DEBT_COMPONENT_ABSENT:short_term_debt"  # latest sheet is 2025-12-27
+    assert out["total_debt"].value == pytest.approx(97e9)  # latest sheet is 2025-12-27: no CP there, none carried over
+    assert "SHORT_TERM_DEBT_NOT_REPORTED" in out["total_debt"].flags
     assert out["debt_to_equity_fy"].state is MetricState.OK  # the fiscal-year pair is complete in the 10-K
 
 

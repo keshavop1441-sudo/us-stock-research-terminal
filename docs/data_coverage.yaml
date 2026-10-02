@@ -1065,7 +1065,7 @@ metrics:
     direct_or_derived: direct
     inputs: []
     formula: null
-    missing_data_behavior: "Absent line = the extraction did not return it. It is NOT zero and NOT evidence of no debt: total_debt is MISSING_INPUT unless all three core lines are reported or the filing explicitly says there is no debt."
+    missing_data_behavior: "Absent line = the extraction did not return it. It is NOT zero and NOT evidence of no debt: total_debt is MISSING_INPUT unless both core lines (current portion of long-term debt, long-term debt) are reported or the filing explicitly says there is no debt. short_term_debt is an optional additional component."
     negative_data_behavior: "A negative component -> NOT_MEANINGFUL."
     restatement_behavior: *sec_vintage
     status: LIVE_VERIFIED
@@ -1102,8 +1102,8 @@ metrics:
     period: "instant"
     direct_or_derived: derived
     inputs: [debt_components]
-    formula: "short_term_debt + current_portion_of_long_term_debt + long_term_debt (+ finance_lease_liabilities when reported). Zero ONLY if every core line is explicitly reported (0 is a value) or the filing explicitly evidences no debt (explicit_no_debt_evidence). Never zero because a line is absent."
-    missing_data_behavior: "Any core component absent (and no explicit no-debt evidence) -> MISSING_INPUT (DEBT_COMPONENT_ABSENT:<names>): a partial sum is a lower bound, not the debt. No balance sheet -> MISSING_INPUT. Contradictory no-debt evidence -> NOT_MEANINGFUL. Finance leases absent: left out, flag FINANCE_LEASES_NOT_REPORTED."
+    formula: "current_portion_of_long_term_debt + long_term_debt (+ short_term_debt when separately reported) (+ finance_lease_liabilities when reported). Zero ONLY if both core lines are explicitly reported (0 is a value) or the filing explicitly evidences no debt (explicit_no_debt_evidence). Never zero because a line is absent."
+    missing_data_behavior: "Either core component (current portion of long-term debt, long-term debt) absent (and no explicit no-debt evidence) -> MISSING_INPUT (DEBT_COMPONENT_ABSENT:<names>): a partial sum is a lower bound, not the debt. short_term_debt absent: left out (never derived from LongTermDebtCurrent), flag SHORT_TERM_DEBT_NOT_REPORTED, line provenance NOT_REPORTED. No balance sheet -> MISSING_INPUT. Contradictory no-debt evidence -> NOT_MEANINGFUL. Finance leases absent: left out, flag FINANCE_LEASES_NOT_REPORTED."
     negative_data_behavior: "Negative component -> NOT_MEANINGFUL."
     restatement_behavior: "Same vintage for all components."
     status: DERIVED
@@ -1761,7 +1761,7 @@ comparability_rules:
     rule: "Growth needs prior > 0 and current >= 0. Margins need revenue > 0. P/E needs EPS > 0. Debt/equity needs equity > 0. A zero divisor is ZERO_DENOMINATOR; a negative or sign-changing base is NOT_MEANINGFUL. Nothing is turned into 0, infinity or a sign-flipped percentage."
     function: growth_rate
   - id: C6_missing_is_not_zero
-    rule: "Absent data stays NULL and is never replaced by zero. Debt is zero only when reported as zero (all core lines present) or explicitly evidenced by the filing; an absent debt line is MISSING. Absent capex is never zero. (Net debt treats an absent short-term-investments line as zero WITH a flag: that understates cash, so net debt errs high, never low.)"
+    rule: "Absent data stays NULL and is never replaced by zero. Debt is zero only when reported as zero (both core long-term lines present) or explicitly evidenced by the filing; an absent debt line is MISSING. Absent capex is never zero. (Net debt treats an absent short-term-investments line as zero WITH a flag: that understates cash, so net debt errs high, never low.)"
     function: total_debt
   - id: C7_issuer_vs_listing
     rule: "Issuer metrics (issuer_market_cap, shares, fundamentals) are per CIK; listing metrics (price, return, volume) per security_id. issuer_market_cap is one number per issuer from the designated primary listing; never add listings' caps; security_market_cap is UNAVAILABLE and not invented."
@@ -1911,7 +1911,7 @@ p0_pilot:
     finding: "Phase 2 recorded candidate tags in a probe script and an OpenBB-field-to-concept dictionary, not an executable 'tested tag selection logic'. The selection above is new in Phase 3A; its tags outside live_probed_in_phase_2 are NOT_VERIFIED until the P0 live report shows them."
     net_income: "NetIncomeLoss only (attributable to the parent). ProfitLoss is never a fallback and is not stored."
     capex: "PaymentsToAcquirePropertyPlantAndEquipment only; absent -> FCF MISSING_INPUT."
-    debt: "(ShortTermBorrowings, else CommercialPaper) + LongTermDebtCurrent + LongTermDebtNoncurrent at ONE balance-sheet date; CommercialPaper is a short-term borrowing instrument (how AAPL reports its short-term debt) and is read only where ShortTermBorrowings is absent for that date, two disagreeing tags are TAG_CONFLICT; DebtCurrent is deliberately NOT mapped (it already contains the current portion of long-term debt: double counting); CommercialPaper is NOT_VERIFIED live until the next live ingest shows it; any absent core line -> MISSING_INPUT; no explicit-no-debt evidence is ingested in P0, so a debt of 0 only arises from three explicitly reported zeros."
+    debt: "(ShortTermBorrowings, else CommercialPaper) + LongTermDebtCurrent + LongTermDebtNoncurrent at ONE balance-sheet date; CommercialPaper is a short-term borrowing instrument (how AAPL reports its short-term debt) and is read only where ShortTermBorrowings is absent for that date, two disagreeing tags are TAG_CONFLICT; DebtCurrent is deliberately NOT mapped (it already contains the current portion of long-term debt: double counting); CommercialPaper is NOT_VERIFIED live until the next live ingest shows it; short_term_debt is optional (absent -> flag SHORT_TERM_DEBT_NOT_REPORTED); an absent LongTermDebtCurrent or LongTermDebtNoncurrent -> MISSING_INPUT; no explicit-no-debt evidence is ingested in P0, so a debt of 0 only arises from two explicitly reported zeros (and any reported short-term zero)."
   periods:
     identification: "By the point's own start/end dates (period_kind), never by fy/fp, which describe the filing."
     ttm: "latest fiscal year + current YTD - prior-year YTD, one tag, YTD aligned to the fiscal year by dates (+-7 days); latest report a 10-K -> that fiscal year; misaligned -> NOT_COMPARABLE; missing prior YTD -> MISSING_INPUT."

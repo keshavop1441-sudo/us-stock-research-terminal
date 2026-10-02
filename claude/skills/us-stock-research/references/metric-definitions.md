@@ -12,7 +12,7 @@ All metrics are computed from stored SEC facts and prices at read time (nothing 
 `fcf` (USD, fiscal year), `revenue_ttm` (USD), `diluted_eps_ttm` (USD/share; sum of FY + YTD - prior YTD, flag `PER_SHARE_SUM_OF_PERIODS`).
 
 ## Balance sheet and leverage
-`total_debt` (USD; MISSING unless all core lines reported), `net_debt` (USD; negative = net cash; short-term investments absent -> flagged zero), `debt_to_equity` (latest balance sheet; negative equity -> `NOT_MEANINGFUL`), `debt_to_equity_fy`, `debt_to_equity_prior_fy`, `debt_to_equity_change_yoy` (positive = leverage rose; "not worsening" = <= 0), `shares_outstanding` (cover-page count, single-class and recent only).
+`total_debt` (USD; current + non-current long-term debt are required, short-term debt is added when separately reported and flagged `SHORT_TERM_DEBT_NOT_REPORTED` otherwise; MISSING if a long-term line is absent), `net_debt` (USD; negative = net cash; short-term investments absent -> flagged zero), `debt_to_equity` (latest balance sheet; negative equity -> `NOT_MEANINGFUL`), `debt_to_equity_fy`, `debt_to_equity_prior_fy`, `debt_to_equity_change_yoy` (positive = leverage rose; "not worsening" = <= 0), `shares_outstanding` (cover-page count, single-class and recent only).
 
 ## Valuation (issuer level)
 `issuer_market_cap` (provider-quoted, primary listing), `price_to_sales` (market cap / latest fiscal-year revenue), `price_to_sales_ttm`, `price_to_earnings` (last close / TTM EPS; never for losses; multi-class flagged `MULTI_CLASS_PER_SHARE_BASIS_UNVERIFIED`).
