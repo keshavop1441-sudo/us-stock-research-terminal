@@ -6,8 +6,15 @@ V5 organises the API by provider namespace, e.g. ``obb.sec.income_statement(...)
 
 ``import openbb`` is slow (several seconds, and builds static assets on first use), so it
 is only done on demand. Checking which packages are installed is cheap and import-free.
+
+Importing ``openbb`` can also ``print()`` to stdout: when the installed extensions differ from the built static
+assets (first use after an install), ``openbb`` rebuilds them at import time and announces it ("Extensions to add:
+...", "Building..."). The research CLI prints exactly one JSON envelope on stdout, so the import is done with stdout
+redirected to stderr (see ``get_obb``): the text is kept as a diagnostic, never mixed into the machine-readable result.
 """
 
+import contextlib
+import sys
 from functools import cache
 from importlib.metadata import PackageNotFoundError, version
 
@@ -31,8 +38,13 @@ def installed_packages() -> OpenBBStatus:
 
 @cache
 def get_obb():
-    """Import and return the OpenBB V5 application object (``obb``). Slow on first call."""
-    from openbb import obb
+    """Import and return the OpenBB V5 application object (``obb``). Slow on first call.
+
+    ``import openbb`` writes first-run build messages to stdout with plain ``print()``. They are sent to stderr here so
+    stdout stays reserved for the CLI's single JSON envelope. Nothing is suppressed, and exceptions still propagate.
+    """
+    with contextlib.redirect_stdout(sys.stderr):
+        from openbb import obb
 
     return obb
 
