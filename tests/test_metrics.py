@@ -119,10 +119,10 @@ def test_an_explicitly_reported_zero_is_a_value():
     "components",
     [
         (None, None, None),  # Berkshire-style: nothing reported
-        (None, 5, 85),  # short-term debt line absent
-        (10, None, 85),
+        (10, None, 85),  # current portion of long-term debt absent (short-term debt does not stand in for it)
         (10, 5, None),  # long-term debt line absent
         (0, None, 0),  # zeros elsewhere do not vouch for the missing line
+        (None, 5, None),  # a lone short-term line is not enough
     ],
 )
 def test_an_absent_debt_line_is_never_zero(components):
@@ -132,6 +132,27 @@ def test_an_absent_debt_line_is_never_zero(components):
     # downstream metrics inherit the unknown instead of computing from a lower bound
     assert m.net_debt(result, 30, 20).state is MISSING
     assert m.debt_to_equity(result, 50).state is MISSING
+
+
+def test_short_term_debt_is_optional_and_never_derived_from_the_current_portion():
+    """total_debt = LongTermDebtCurrent + LongTermDebtNoncurrent (+ short-term debt when separately reported)."""
+    absent = m.total_debt(None, 9.227e9, 31.067e9, balance_sheet_present=True)  # MSFT FY2026 shape
+    assert absent.ok and absent.value == pytest.approx(40.294e9)
+    assert absent.flags == ("SHORT_TERM_DEBT_NOT_REPORTED", "FINANCE_LEASES_NOT_REPORTED")
+    nvda = m.total_debt(None, 1.0e9, 32.366e9, balance_sheet_present=True)  # NVDA Jul 2026 shape
+    assert nvda.ok and nvda.value == pytest.approx(33.366e9)
+    aapl = m.total_debt(1.997e9, 11.007e9, 71.340e9, balance_sheet_present=True)  # CommercialPaper separately reported
+    assert aapl.ok and aapl.value == pytest.approx(84.344e9) and "SHORT_TERM_DEBT_NOT_REPORTED" not in aapl.flags
+    # the current portion is counted exactly once: an absent short-term line adds nothing, a reported one adds itself
+    assert m.total_debt(None, 7, 3, balance_sheet_present=True).value == 10
+    assert m.total_debt(2, 7, 3, balance_sheet_present=True).value == 12
+    assert m.total_debt(0, 7, 3, balance_sheet_present=True).flags == ("FINANCE_LEASES_NOT_REPORTED",)
+    # a negative optional component is still not meaningful; the core lines missing still blocks everything
+    assert m.total_debt(-1, 7, 3, balance_sheet_present=True).reason == "NEGATIVE_DEBT_COMPONENT"
+    assert m.total_debt(None, None, 3, balance_sheet_present=True).reason == (
+        "DEBT_COMPONENT_ABSENT:current_portion_long_term_debt"
+    )
+    assert m.total_debt(None, 7, None, balance_sheet_present=True).reason == "DEBT_COMPONENT_ABSENT:long_term_debt"
 
 
 def test_absent_debt_is_missing_whatever_else_is_known_about_the_filer():

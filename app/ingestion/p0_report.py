@@ -55,7 +55,7 @@ PROVIDER_ERROR_KINDS = frozenset({
 SEC_MAX_PER_SECOND = 9
 _ROLES = {s.symbol: set(s.roles) for s in MANIFEST}
 _NOT_INDUSTRIAL = {"financial", "adr"}  # reported separately from the industrial-filer thresholds (YAML A4/A5)
-_ZERO_DEBT_LINES = ("short_term_debt", "current_portion_long_term_debt", "long_term_debt")
+_ZERO_DEBT_LINES = ("current_portion_long_term_debt", "long_term_debt")  # the core lines; short-term is optional
 SIMULATED_NOTE = "providers were simulated: provider-behaviour components are not evaluated"
 MECHANICAL_NOTE = "mechanical check of the write path"
 
