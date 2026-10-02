@@ -114,7 +114,7 @@ def fact(value, accession, filed_form="10-K", **overrides):
 
 def test_restated_period_keeps_both_vintages_and_point_in_time_picks_the_right_one(db_path, con):
     original = fact(-4747e6, "0001874178-25-000010", filed_date=D(2025, 2, 24))
-    restated = fact(-4700e6, "0001874178-26-000008", filed_date=D(2026, 2, 12))  # same period, later filing
+    restated = fact(-4700e6, "0001874178-26-000008", filed_date=D(2026, 2, 12))  # later filing; value is illustrative
     with access.writer(db_path, "test") as w:
         w.upsert_financial_facts([original, restated])
         w.upsert_financial_facts([original, restated])  # reload: still two rows

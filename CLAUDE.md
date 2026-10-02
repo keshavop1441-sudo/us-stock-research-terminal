@@ -81,3 +81,15 @@ and keep logic in Python where it can be tested. Real Windows verification = the
 
 ## Testing
 Hermetic: temp databases (`tmp_path`), Ollama pointed at a closed port or a mock transport. Use `AppTest` for UI behaviour.
+
+## Data sources and metric rules (Phase 2 audit)
+- `docs/data_coverage.yaml` is the machine-readable coverage matrix and metric dictionary (statuses LIVE_VERIFIED /
+  API_SHAPE_VERIFIED / FIXTURE_VERIFIED / NOT_VERIFIED / UNAVAILABLE / DERIVED); `docs/data_coverage.md` is the summary.
+  After editing the YAML run `python tests/render_coverage.py`; `tests/test_data_coverage.py` validates it.
+- Never mark something LIVE_VERIFIED without a real live call (the dev sandbox cannot reach providers: use the
+  `provider-probe` workflow and cite the run id). Do not pass fixtures or unit tests off as live evidence.
+- Derived metrics live in `app/screening/metrics.py` and return a `MetricResult` (OK / MISSING_INPUT / ZERO_DENOMINATOR /
+  NOT_MEANINGFUL / NOT_COMPARABLE); never turn a non-OK state into 0 or a percentage. Growth uses values from the same
+  filing (`same_filing_pair`); net income means `net_income_to_common`; market cap is per issuer; no TTM share counts.
+- SEC `BRK-B` vs Nasdaq/Cboe `BRK.B`: use `app/models/symbols.py`; identity is the CIK. Dates/periods: `app/models/periods.py`.
+

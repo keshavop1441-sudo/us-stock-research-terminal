@@ -5,7 +5,11 @@ A local Windows application for researching US stocks. You will type requests su
 cash flow, P/S below 5..."* and the terminal will screen the market and investigate the survivors
 (filings, contracts, lawsuits, insider and institutional activity, earnings, news).
 
-> **Status: foundation, hardened (Phase 1).** The app starts, the database exists with an idempotent
+> **Status: foundation, hardened (Phase 1), data-source audit done (Phase 2).** Phase 2 changed no
+> product behaviour: it produced the coverage matrix in [`docs/data_coverage.md`](docs/data_coverage.md),
+> executable metric rules and recorded fixtures. No provider data is ingested.
+>
+> **Phase 1 status:** The app starts, the database exists with an idempotent
 > write path, the pages are laid out, and health checks work. There is **no screening engine, no data
 > loader and no LLM generation yet**, and the database is empty. Nothing here is fake data: anything
 > missing shows as `N/A`.
@@ -198,20 +202,24 @@ app/
   ui/              One script per page + helpers (no SQL, no database imports)
   services/        Use-cases for the UI; the only layer that opens repositories
   database/        schema, migrations, locking, connection, access, read_repository, write_repository, frames
-  models/          identifiers (CIK/ticker), records (write inputs), status models
+  models/          identifiers (CIK/ticker), symbols (share-class spellings), periods, records (write inputs), status models
   agent/           LLMProvider abstraction, OllamaProvider (availability detection only)
   tools/           Tool registry (no tools yet)
   data/            OpenBB V5 access (lazy import)
-  screening/ research/   (planned)
-scripts/           bootstrap_env.py, launch_terminal.py, init_db.py, update_data.py, setup_env.bat
+  screening/       metrics.py: executable metric rules (N/A states, comparability); the screener itself is planned
+  research/        (planned)
+docs/              data_coverage.yaml (machine-readable Phase 2 coverage matrix) + data_coverage.md
+scripts/           bootstrap_env.py, launch_terminal.py, init_db.py, update_data.py, setup_env.bat,
+                   audit/probe_providers.py (read-only provider probe, run by .github/workflows/provider-probe.yml)
 tests/             pytest suite + hold_database.py / minimal_frames_check.py helpers
 data/              research.duckdb lives here (git-ignored)
 ```
 
 ## Remaining work
 
-1. Data-source coverage audit, then loaders (via OpenBB): securities + CIK map, SEC company facts, prices,
-   filings, earnings, ownership, news/events.
+1. Phase 3 loaders (via OpenBB and the SEC endpoints named in `docs/data_coverage.md`): securities + CIK map, SEC company
+   facts (raw points with accession/filed date), prices, filings, earnings, ownership, news/events. First apply the
+   schema changes listed in `docs/data_coverage.md` section 9 (`sources` command/parameters/version/as-of).
 2. Screening engine; natural-language -> structured screen (LLM generation, first read-only tools).
 3. Company research page and research-run workflow.
 4. Watchlist items, saved screens, charts.

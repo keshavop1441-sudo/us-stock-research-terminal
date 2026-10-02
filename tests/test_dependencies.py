@@ -16,6 +16,7 @@ IMPORT_TO_DIST = {
     "openbb_nasdaq": "openbb-nasdaq",
     "openbb_cboe": "openbb-cboe",
     "openbb_news": "openbb-news",
+    "yaml": "PyYAML",
 }
 LOCAL_PACKAGES = {"app", "scripts", "tests"}
 
