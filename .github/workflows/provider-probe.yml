@@ -13,7 +13,7 @@ on:
         required: false
         default: ""
       group:
-        description: "Run a single group only (blank = all four)"
+        description: "Run a single group only (blank = all groups)"
         required: false
         default: ""
   pull_request:
@@ -32,7 +32,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        group: [connect_identity, market, fundamentals, ownership_events]
+        group: [connect_identity, market, fundamentals, ownership_events, followup]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

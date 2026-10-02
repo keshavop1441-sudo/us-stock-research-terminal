@@ -122,7 +122,11 @@ def use_obb():
 
 
 def rows(result) -> list[dict]:
-    return [r.model_dump(mode="json") for r in result.results]
+    """Normalise an OpenBB result to a list of JSON dicts (some commands return one model, not a list)."""
+    data = result.results
+    if not isinstance(data, list):
+        data = [data]
+    return [r.model_dump(mode="json") if hasattr(r, "model_dump") else r for r in data]
 
 
 def nonnull(records: list[dict]) -> dict[str, int]:
@@ -761,8 +765,84 @@ def group_ownership_events() -> None:
         probe(f"events.8k_items.{symbol}", item_counts, symbol)
 
 
+# =====================================================================================================================
+# group: followup  (open questions left after the first two probe rounds)
+# =====================================================================================================================
+def group_followup() -> None:
+    obb = use_obb()
+
+    # Q1 multi-class market cap: is it per class or whole-company, per provider?
+    for symbol in ("GOOGL", "GOOG", "BRK.A", "BRK.B", "AAPL"):
+        probe(f"followup.quote_nasdaq.{symbol}", lambda s=symbol: [
+            pick(r, ["symbol", "last_price", "market_cap", "year_high", "year_low", "sector", "industry"])
+            for r in rows(obb.nasdaq.equity.quote(symbol=s, provider="nasdaq"))])  # fmt: skip
+
+    # Q2 company_type / provenance for the awkward filers
+    def meta(symbol: str, statement: str = "income_statement", period: str = "annual") -> dict:
+        res = getattr(obb.sec, statement)(symbol=symbol, period=period, limit=2, provider="sec")
+        m = (getattr(res, "extra", {}) or {}).get("results_metadata") or {}
+        return {"entity": m.get("entity_name"), "company_type": m.get("company_type"),
+                "keys": sorted(m)[:12], "warnings": (m.get("validation_warnings") or [])[:4],
+                "first_row_nonnull": sorted(k for k, v in rows(res)[0].items() if v is not None)[:60]}  # fmt: skip
+
+    for symbol in ("BRK-B", "GOOGL", "NVDA", "RIVN", "JPM"):
+        probe(f"followup.meta.{symbol}", meta, symbol)
+
+    # Q3 net income attribution (RIVN-style non-controlling interests): OpenBB vs raw XBRL tags
+    def net_income_tags(symbol: str, cik: int) -> dict:
+        facts = sec_json(f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik10(cik)}.json")["facts"]["us-gaap"]
+        out: dict = {}
+        for tag in (
+            "NetIncomeLoss",
+            "ProfitLoss",
+            "NetIncomeLossAvailableToCommonStockholdersBasic",
+            "IncomeLossFromContinuingOperations",
+        ):
+            if tag in facts:
+                pts = [p for p in facts[tag]["units"]["USD"] if p.get("fp") == "FY"][-3:]
+                out[tag] = [(p["end"], p["val"], p["form"], p["filed"]) for p in pts]
+        res = rows(obb.sec.income_statement(symbol=symbol, period="annual", limit=3, provider="sec"))
+        out["openbb"] = [pick(r, ["period_ending", "net_income", "consolidated_net_income", "net_income_continuing_operations", "net_income_attributable_to_noncontrolling_interest", "net_income_to_common"]) for r in res]  # fmt: skip
+        return out
+
+    for symbol in ("RIVN", "NVDA"):
+        probe(f"followup.net_income.{symbol}", net_income_tags, symbol, ALL_CIKS[symbol])
+
+    # Q4 NVDA split: default vs pit_mode, per-share and share fields across the 2024 10:1 split
+    for pit in (False, True):
+        probe(f"followup.nvda_split.pit_{pit}", lambda p=pit: summary(
+            obb.sec.income_statement(symbol="NVDA", period="annual", limit=4, pit_mode=p, provider="sec"),
+            ["period_ending", "fiscal_year", "total_revenue", "net_income", "diluted_eps", "weighted_average_diluted_shares_outstanding", "filing_date"], 4))  # fmt: skip
+
+    # Q5 quarterly cash flow: discrete quarters or fiscal-year-to-date?
+    probe("followup.cashflow.AAPL.quarterly", lambda: summary(
+        obb.sec.cash_flow(symbol="AAPL", period="quarterly", limit=6, provider="sec"),
+        ["period_ending", "fiscal_period", "fiscal_year", "net_cash_from_operating_activities", "capital_expenditures", "purchase_of_property_plant_and_equipment", "filing_date"], 6))  # fmt: skip
+
+    # Q6 dei shares outstanding: single class vs multi class, as raw facts (filed date + accession)
+    def dei_shares(symbol: str, cik: int) -> dict:
+        facts = sec_json(f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik10(cik)}.json")["facts"].get("dei", {})
+        out: dict = {"dei_tags": sorted(facts)}
+        for tag in ("EntityCommonStockSharesOutstanding", "EntityPublicFloat"):
+            if tag in facts:
+                unit = next(iter(facts[tag]["units"]))
+                pts = facts[tag]["units"][unit]
+                out[tag] = {"unit": unit, "n": len(pts), "keys": sorted(pts[-1]),
+                            "latest": [(p["end"], p["val"], p["form"], p["filed"], p.get("fy"), p.get("fp")) for p in pts[-4:]]}  # fmt: skip
+        return out
+
+    for symbol in ("AAPL", "GOOGL", "BRK-B"):
+        probe(f"followup.dei_shares.{symbol}", dei_shares, symbol, ALL_CIKS[symbol])
+
+    # Q7 single-object commands (previous round failed in my probe code, not at the provider)
+    for symbol in ("AAPL", "BRK-B"):
+        probe(f"followup.cik_map.{symbol}", lambda s=symbol: rows(obb.sec.cik_map(symbol=s, provider="sec")))
+    probe("followup.symbol_map.320193", lambda: rows(obb.sec.symbol_map(query="320193", provider="sec")))
+    probe("followup.symbol_map.1067983", lambda: rows(obb.sec.symbol_map(query="1067983", provider="sec")))
+
+
 GROUPS = {"connect_identity": group_connect_identity, "market": group_market, "fundamentals": group_fundamentals,
-          "ownership_events": group_ownership_events}  # fmt: skip
+          "ownership_events": group_ownership_events, "followup": group_followup}  # fmt: skip
 
 
 def main() -> int:
